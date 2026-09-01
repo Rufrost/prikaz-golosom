@@ -59,6 +59,21 @@
     align-items: center;
     gap: 12px;
   }
+  .record-buttons {
+    display: flex;
+    gap: 28px;
+    align-items: flex-end;
+  }
+  .record-btn-group {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+  }
+  .btn-caption {
+    font-size: 11px;
+    color: var(--muted);
+  }
   #recordBtn {
     width: 88px;
     height: 88px;
@@ -76,16 +91,66 @@
     background: var(--danger);
     animation: pulse 1.4s infinite;
   }
+  #appendBtn {
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    border: 1px solid var(--border);
+    background: white;
+    color: var(--accent);
+    font-size: 22px;
+    cursor: pointer;
+    transition: background 0.15s, transform 0.1s;
+  }
+  #appendBtn:hover { background: #f0f0f0; }
+  #appendBtn:active { transform: scale(0.96); }
+  #appendBtn.recording {
+    background: var(--danger);
+    color: white;
+    border-color: var(--danger);
+    animation: pulse 1.4s infinite;
+  }
+  #recordBtn:disabled, #appendBtn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+    animation: none;
+  }
   @keyframes pulse {
     0% { box-shadow: 0 0 0 0 rgba(220,38,38,0.4); }
     70% { box-shadow: 0 0 0 16px rgba(220,38,38,0); }
     100% { box-shadow: 0 0 0 0 rgba(220,38,38,0); }
   }
+  #timer {
+    font-size: 22px;
+    font-variant-numeric: tabular-nums;
+    font-family: "Consolas", monospace;
+    color: var(--text);
+    min-height: 26px;
+  }
+  #timer.active { color: var(--danger); }
+  #cancelSendBtn {
+    border: 1px solid var(--danger);
+    color: var(--danger);
+    background: white;
+    border-radius: 6px;
+    padding: 6px 14px;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  #cancelSendBtn:hover { background: #fee2e2; }
   #status {
     font-size: 13px;
     color: var(--muted);
     min-height: 18px;
   }
+  .token-stats {
+    display: flex;
+    gap: 16px;
+    justify-content: center;
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .token-stats b { color: var(--text); }
   .result-panel {
     background: var(--panel);
     border: 1px solid var(--border);
@@ -103,6 +168,10 @@
     justify-content: space-between;
     align-items: center;
   }
+  .label-actions {
+    display: flex;
+    gap: 8px;
+  }
   #result {
     flex: 1;
     resize: none;
@@ -112,7 +181,7 @@
     font-size: 14px;
     font-family: inherit;
   }
-  #copyBtn {
+  .mini-btn {
     border: 1px solid var(--border);
     background: white;
     border-radius: 6px;
@@ -120,7 +189,8 @@
     font-size: 12px;
     cursor: pointer;
   }
-  #copyBtn:hover { background: #f0f0f0; }
+  .mini-btn:hover { background: #f0f0f0; }
+  .mini-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
   .modal-overlay {
     position: fixed;
@@ -135,7 +205,9 @@
     background: var(--panel);
     border-radius: 12px;
     padding: 20px 24px;
-    width: 420px;
+    width: 460px;
+    max-height: 90vh;
+    overflow-y: auto;
     display: flex;
     flex-direction: column;
     gap: 12px;
@@ -143,12 +215,14 @@
   .modal h2 { margin: 0 0 4px; font-size: 16px; }
   .field { display: flex; flex-direction: column; gap: 4px; }
   .field label { font-size: 12px; color: var(--muted); }
-  .field input {
+  .field input, .field textarea {
     border: 1px solid var(--border);
     border-radius: 6px;
     padding: 8px 10px;
     font-size: 13px;
+    font-family: inherit;
   }
+  .field textarea { resize: vertical; }
   .modal-actions {
     display: flex;
     justify-content: flex-end;
@@ -175,16 +249,34 @@
 
   <main>
     <div class="record-panel">
-      <button id="recordBtn">🎙</button>
+      <div class="record-buttons">
+        <div class="record-btn-group">
+          <button id="recordBtn" title="Записать (заменит текст)">🎙</button>
+          <span class="btn-caption">Записать</span>
+        </div>
+        <div class="record-btn-group">
+          <button id="appendBtn" title="Дозаписать (добавит к тексту)">➕</button>
+          <span class="btn-caption">Дозаписать</span>
+        </div>
+      </div>
+      <div id="timer">00:00</div>
+      <button id="cancelSendBtn" hidden>Отменить отправку</button>
       <div id="status">Нажмите, чтобы начать запись</div>
     </div>
 
     <div class="result-panel">
       <label>
         Транскрибация
-        <button id="copyBtn">Копировать</button>
+        <span class="label-actions">
+          <button class="mini-btn" id="checkErrorsBtn">Проверить на ошибки</button>
+          <button class="mini-btn" id="copyBtn">Копировать</button>
+        </span>
       </label>
       <textarea id="result" placeholder="Здесь появится текст после записи..."></textarea>
+      <div class="token-stats">
+        <span>Последний запрос: <b id="lastTokens">—</b></span>
+        <span>За сессию: <b id="sessionTokens">0</b></span>
+      </div>
     </div>
   </main>
 
@@ -200,12 +292,20 @@
         <input type="text" id="baseUrl" placeholder="https://api.polza.ai/v1" />
       </div>
       <div class="field">
-        <label>Модель транскрибации</label>
+        <label>Голосовая модель (транскрибация)</label>
         <input type="text" id="model" placeholder="whisper-1" />
       </div>
       <div class="field">
-        <label>Язык (необязательно, код ISO, напр. ru)</label>
+        <label>Язык записи (необязательно, код ISO, напр. ru)</label>
         <input type="text" id="language" placeholder="ru" />
+      </div>
+      <div class="field">
+        <label>Текстовая модель (проверка на ошибки)</label>
+        <input type="text" id="textModel" placeholder="gpt-4o-mini" />
+      </div>
+      <div class="field">
+        <label>Промпт для исправления ошибок</label>
+        <textarea id="correctionPrompt" rows="4"></textarea>
       </div>
       <div class="modal-actions">
         <button class="btn secondary" id="closeSettings">Отмена</button>

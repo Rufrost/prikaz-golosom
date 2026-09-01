@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, session } = require("electron");
+const { app, BrowserWindow, ipcMain, session, clipboard } = require("electron");
 const fs = require("node:fs");
 const path = require("node:path");
 const os = require("node:os");
@@ -6,11 +6,25 @@ const OpenAI = require("openai");
 
 const CONFIG_PATH = path.join(app.getPath("userData"), "config.json");
 
+const DEFAULT_CORRECTION_PROMPT =
+  "Исправь орфографические, пунктуационные и грамматические ошибки в этом тексте, " +
+  "сохрани исходный язык, стиль и разбивку на абзацы. " +
+  "Верни только исправленный текст без пояснений, кавычек и комментариев.";
+
+const DEFAULT_CONFIG = {
+  apiKey: "",
+  baseUrl: "https://api.polza.ai/v1",
+  model: "whisper-1",
+  textModel: "gpt-4o-mini",
+  correctionPrompt: DEFAULT_CORRECTION_PROMPT,
+};
+
 function loadConfig() {
   try {
-    return JSON.parse(fs.readFileSync(CONFIG_PATH, "utf-8"));
+    const saved = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf-8"));
+    return { ...DEFAULT_CONFIG, ...saved };
   } catch {
-    return { apiKey: "", baseUrl: "https://api.polza.ai/v1", model: "whisper-1" };
+    return { ...DEFAULT_CONFIG };
   }
 }
 
@@ -18,10 +32,17 @@ function saveConfig(config) {
   fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2), "utf-8");
 }
 
+// Грубая оценка на случай, если провайдер/модель не возвращает точный usage
+// (whisper-подобные модели тарифицируются по длительности аудио, а не по токенам).
+function estimateTokens(text) {
+  if (!text) return 0;
+  return Math.max(1, Math.ceil(text.length / 4));
+}
+
 function createWindow() {
   const win = new BrowserWindow({
     width: 640,
-    height: 620,
+    height: 700,
     resizable: false,
     autoHideMenuBar: true,
     webPreferences: {
@@ -57,6 +78,11 @@ ipcMain.handle("save-config", (_event, config) => {
   return true;
 });
 
+ipcMain.handle("copy-text", (_event, text) => {
+  clipboard.writeText(text ?? "");
+  return true;
+});
+
 ipcMain.handle("transcribe", async (_event, { buffer, language }) => {
   const config = loadConfig();
   if (!config.apiKey) {
@@ -69,17 +95,57 @@ ipcMain.handle("transcribe", async (_event, { buffer, language }) => {
   try {
     const client = new OpenAI({
       apiKey: config.apiKey,
-      baseURL: config.baseUrl || "https://api.polza.ai/v1",
+      baseURL: config.baseUrl || DEFAULT_CONFIG.baseUrl,
     });
 
     const transcription = await client.audio.transcriptions.create({
       file: fs.createReadStream(tmpFile),
-      model: config.model || "whisper-1",
+      model: config.model || DEFAULT_CONFIG.model,
       ...(language ? { language } : {}),
     });
 
-    return transcription.text;
+    const text = transcription.text;
+    // Часть провайдеров/моделей (напр. whisper-1) не возвращает usage вовсе —
+    // тогда считаем это приблизительно по длине текста и помечаем как оценку.
+    const rawUsage = transcription.usage;
+    const usage = rawUsage && typeof rawUsage.total_tokens === "number"
+      ? { total: rawUsage.total_tokens, estimated: false }
+      : { total: estimateTokens(text), estimated: true };
+
+    return { text, usage };
   } finally {
     fs.unlink(tmpFile, () => {});
   }
+});
+
+ipcMain.handle("correct-text", async (_event, { text }) => {
+  const config = loadConfig();
+  if (!config.apiKey) {
+    throw new Error("Не задан API-ключ polza.ai. Откройте настройки и укажите ключ.");
+  }
+  if (!text || !text.trim()) {
+    throw new Error("Нет текста для проверки.");
+  }
+
+  const client = new OpenAI({
+    apiKey: config.apiKey,
+    baseURL: config.baseUrl || DEFAULT_CONFIG.baseUrl,
+  });
+
+  const completion = await client.chat.completions.create({
+    model: config.textModel || DEFAULT_CONFIG.textModel,
+    temperature: 0,
+    messages: [
+      { role: "system", content: config.correctionPrompt || DEFAULT_CORRECTION_PROMPT },
+      { role: "user", content: text },
+    ],
+  });
+
+  const corrected = completion.choices[0]?.message?.content?.trim() || text;
+  const rawUsage = completion.usage;
+  const usage = rawUsage && typeof rawUsage.total_tokens === "number"
+    ? { total: rawUsage.total_tokens, estimated: false }
+    : { total: estimateTokens(text) + estimateTokens(corrected), estimated: true };
+
+  return { text: corrected, usage };
 });

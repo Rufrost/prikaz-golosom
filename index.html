@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<title>Приказ голосом</title>
+<style>
+  :root {
+    color-scheme: light;
+    --bg: #f4f5f7;
+    --panel: #ffffff;
+    --text: #1c1f26;
+    --muted: #6b7280;
+    --accent: #4f46e5;
+    --accent-hover: #4338ca;
+    --danger: #dc2626;
+    --border: #e5e7eb;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: "Segoe UI", system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+  header {
+    padding: 16px 20px 8px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  header h1 {
+    font-size: 18px;
+    margin: 0;
+  }
+  .gear {
+    background: none;
+    border: none;
+    font-size: 20px;
+    cursor: pointer;
+    color: var(--muted);
+  }
+  main {
+    flex: 1;
+    padding: 8px 20px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .record-panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+  }
+  #recordBtn {
+    width: 88px;
+    height: 88px;
+    border-radius: 50%;
+    border: none;
+    background: var(--accent);
+    color: white;
+    font-size: 32px;
+    cursor: pointer;
+    transition: background 0.15s, transform 0.1s;
+  }
+  #recordBtn:hover { background: var(--accent-hover); }
+  #recordBtn:active { transform: scale(0.96); }
+  #recordBtn.recording {
+    background: var(--danger);
+    animation: pulse 1.4s infinite;
+  }
+  @keyframes pulse {
+    0% { box-shadow: 0 0 0 0 rgba(220,38,38,0.4); }
+    70% { box-shadow: 0 0 0 16px rgba(220,38,38,0); }
+    100% { box-shadow: 0 0 0 0 rgba(220,38,38,0); }
+  }
+  #status {
+    font-size: 13px;
+    color: var(--muted);
+    min-height: 18px;
+  }
+  .result-panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .result-panel label {
+    font-size: 13px;
+    color: var(--muted);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  #result {
+    flex: 1;
+    resize: none;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px;
+    font-size: 14px;
+    font-family: inherit;
+  }
+  #copyBtn {
+    border: 1px solid var(--border);
+    background: white;
+    border-radius: 6px;
+    padding: 4px 10px;
+    font-size: 12px;
+    cursor: pointer;
+  }
+  #copyBtn:hover { background: #f0f0f0; }
+
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.35);
+    display: none;
+    align-items: center;
+    justify-content: center;
+  }
+  .modal-overlay.open { display: flex; }
+  .modal {
+    background: var(--panel);
+    border-radius: 12px;
+    padding: 20px 24px;
+    width: 420px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .modal h2 { margin: 0 0 4px; font-size: 16px; }
+  .field { display: flex; flex-direction: column; gap: 4px; }
+  .field label { font-size: 12px; color: var(--muted); }
+  .field input {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 10px;
+    font-size: 13px;
+  }
+  .modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 8px;
+  }
+  .btn {
+    border: none;
+    border-radius: 6px;
+    padding: 8px 14px;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .btn.primary { background: var(--accent); color: white; }
+  .btn.primary:hover { background: var(--accent-hover); }
+  .btn.secondary { background: #f0f0f0; color: var(--text); }
+</style>
+</head>
+<body>
+  <header>
+    <h1>Приказ голосом</h1>
+    <button class="gear" id="settingsBtn" title="Настройки">⚙</button>
+  </header>
+
+  <main>
+    <div class="record-panel">
+      <button id="recordBtn">🎙</button>
+      <div id="status">Нажмите, чтобы начать запись</div>
+    </div>
+
+    <div class="result-panel">
+      <label>
+        Транскрибация
+        <button id="copyBtn">Копировать</button>
+      </label>
+      <textarea id="result" placeholder="Здесь появится текст после записи..."></textarea>
+    </div>
+  </main>
+
+  <div class="modal-overlay" id="settingsModal">
+    <div class="modal">
+      <h2>Настройки polza.ai</h2>
+      <div class="field">
+        <label>API-ключ</label>
+        <input type="password" id="apiKey" placeholder="sk-..." />
+      </div>
+      <div class="field">
+        <label>Base URL</label>
+        <input type="text" id="baseUrl" placeholder="https://api.polza.ai/v1" />
+      </div>
+      <div class="field">
+        <label>Модель транскрибации</label>
+        <input type="text" id="model" placeholder="whisper-1" />
+      </div>
+      <div class="field">
+        <label>Язык (необязательно, код ISO, напр. ru)</label>
+        <input type="text" id="language" placeholder="ru" />
+      </div>
+      <div class="modal-actions">
+        <button class="btn secondary" id="closeSettings">Отмена</button>
+        <button class="btn primary" id="saveSettings">Сохранить</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="renderer.js"></script>
+</body>
+</html>

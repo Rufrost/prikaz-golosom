@@ -35,6 +35,10 @@
     font-size: 18px;
     margin: 0;
   }
+  .header-actions {
+    display: flex;
+    gap: 4px;
+  }
   .gear {
     background: none;
     border: none;
@@ -42,6 +46,7 @@
     cursor: pointer;
     color: var(--muted);
   }
+  .gear:hover { color: var(--text); }
   main {
     flex: 1;
     padding: 8px 20px 20px;
@@ -239,12 +244,53 @@
   .btn.primary { background: var(--accent); color: white; }
   .btn.primary:hover { background: var(--accent-hover); }
   .btn.secondary { background: #f0f0f0; color: var(--text); }
+
+  .history-modal { width: 520px; }
+  .history-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    max-height: 50vh;
+    overflow-y: auto;
+  }
+  .history-item {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px;
+  }
+  .history-item-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 11px;
+    color: var(--muted);
+    margin-bottom: 6px;
+    gap: 8px;
+  }
+  .history-item-type {
+    font-weight: 600;
+    color: var(--accent);
+  }
+  .history-item-text {
+    font-size: 13px;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .history-empty {
+    font-size: 13px;
+    color: var(--muted);
+    text-align: center;
+    padding: 20px 0;
+  }
 </style>
 </head>
 <body>
   <header>
     <h1>Приказ голосом</h1>
-    <button class="gear" id="settingsBtn" title="Настройки">⚙</button>
+    <div class="header-actions">
+      <button class="gear" id="historyBtn" title="История">🕘</button>
+      <button class="gear" id="settingsBtn" title="Настройки">⚙</button>
+    </div>
   </header>
 
   <main>
@@ -310,6 +356,17 @@
       <div class="modal-actions">
         <button class="btn secondary" id="closeSettings">Отмена</button>
         <button class="btn primary" id="saveSettings">Сохранить</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="historyModal">
+    <div class="modal history-modal">
+      <h2>История транскрибаций</h2>
+      <div id="historyList" class="history-list"></div>
+      <div class="modal-actions">
+        <button class="btn secondary" id="clearHistoryBtn">Очистить историю</button>
+        <button class="btn primary" id="closeHistory">Закрыть</button>
       </div>
     </div>
   </div>

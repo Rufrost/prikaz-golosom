@@ -5,11 +5,22 @@ const os = require("node:os");
 const OpenAI = require("openai");
 
 const CONFIG_PATH = path.join(app.getPath("userData"), "config.json");
+const HISTORY_PATH = path.join(app.getPath("userData"), "history.json");
+const HISTORY_LIMIT = 50;
 
-const DEFAULT_CORRECTION_PROMPT =
+// Прежний дефолт — если у пользователя в конфиге сохранён именно он (т.е. он его не
+// редактировал), тихо переносим на новый вариант при загрузке, см. loadConfig().
+const OLD_DEFAULT_CORRECTION_PROMPT =
   "Исправь орфографические, пунктуационные и грамматические ошибки в этом тексте, " +
   "сохрани исходный язык, стиль и разбивку на абзацы. " +
   "Верни только исправленный текст без пояснений, кавычек и комментариев.";
+
+const DEFAULT_CORRECTION_PROMPT =
+  "Исправь орфографические, пунктуационные и грамматические ошибки в этом тексте. " +
+  "Убери слова-паразиты, звуки-заполнители и мычание (э, м, ну, вот, типа, как бы и т.п.), " +
+  "а также повторы слов из-за запинок при надиктовке. " +
+  "Сохрани исходный язык, смысл, стиль и разбивку на абзацы. " +
+  "Верни только очищенный текст без пояснений, кавычек и комментариев.";
 
 const DEFAULT_CONFIG = {
   apiKey: "",
@@ -22,6 +33,9 @@ const DEFAULT_CONFIG = {
 function loadConfig() {
   try {
     const saved = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf-8"));
+    if (saved.correctionPrompt === OLD_DEFAULT_CORRECTION_PROMPT) {
+      saved.correctionPrompt = DEFAULT_CORRECTION_PROMPT;
+    }
     return { ...DEFAULT_CONFIG, ...saved };
   } catch {
     return { ...DEFAULT_CONFIG };
@@ -30,6 +44,31 @@ function loadConfig() {
 
 function saveConfig(config) {
   fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2), "utf-8");
+}
+
+function loadHistory() {
+  try {
+    return JSON.parse(fs.readFileSync(HISTORY_PATH, "utf-8"));
+  } catch {
+    return [];
+  }
+}
+
+function saveHistory(entries) {
+  fs.writeFileSync(HISTORY_PATH, JSON.stringify(entries, null, 2), "utf-8");
+}
+
+function addHistoryEntry(type, text) {
+  const entries = loadHistory();
+  entries.unshift({
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    timestamp: Date.now(),
+    type,
+    text,
+  });
+  const trimmed = entries.slice(0, HISTORY_LIMIT);
+  saveHistory(trimmed);
+  return trimmed;
 }
 
 // Грубая оценка на случай, если провайдер/модель не возвращает точный usage
@@ -83,7 +122,14 @@ ipcMain.handle("copy-text", (_event, text) => {
   return true;
 });
 
-ipcMain.handle("transcribe", async (_event, { buffer, language }) => {
+ipcMain.handle("get-history", () => loadHistory());
+
+ipcMain.handle("clear-history", () => {
+  saveHistory([]);
+  return [];
+});
+
+ipcMain.handle("transcribe", async (_event, { buffer, language, mode }) => {
   const config = loadConfig();
   if (!config.apiKey) {
     throw new Error("Не задан API-ключ polza.ai. Откройте настройки и укажите ключ.");
@@ -111,6 +157,8 @@ ipcMain.handle("transcribe", async (_event, { buffer, language }) => {
     const usage = rawUsage && typeof rawUsage.total_tokens === "number"
       ? { total: rawUsage.total_tokens, estimated: false }
       : { total: estimateTokens(text), estimated: true };
+
+    addHistoryEntry(mode === "append" ? "дозапись" : "запись", text);
 
     return { text, usage };
   } finally {
@@ -146,6 +194,8 @@ ipcMain.handle("correct-text", async (_event, { text }) => {
   const usage = rawUsage && typeof rawUsage.total_tokens === "number"
     ? { total: rawUsage.total_tokens, estimated: false }
     : { total: estimateTokens(text) + estimateTokens(corrected), estimated: true };
+
+  addHistoryEntry("исправление", corrected);
 
   return { text: corrected, usage };
 });

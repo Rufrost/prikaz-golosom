@@ -18,7 +18,10 @@
     "appId": "com.prikazgolosom.app",
     "productName": "Приказ голосом",
     "win": {
-      "target": "nsis"
+      "target": ["nsis", "portable"]
+    },
+    "portable": {
+      "artifactName": "${productName} portable ${version}.exe"
     },
     "files": [
       "main.js",

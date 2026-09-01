@@ -20,6 +20,12 @@ const languageInput = document.getElementById("language");
 const textModelInput = document.getElementById("textModel");
 const correctionPromptInput = document.getElementById("correctionPrompt");
 
+const historyBtn = document.getElementById("historyBtn");
+const historyModal = document.getElementById("historyModal");
+const historyListEl = document.getElementById("historyList");
+const closeHistory = document.getElementById("closeHistory");
+const clearHistoryBtn = document.getElementById("clearHistoryBtn");
+
 const CANCEL_WINDOW_MS = 1500;
 
 let mediaRecorder = null;
@@ -88,6 +94,57 @@ saveSettings.addEventListener("click", async () => {
     correctionPrompt: correctionPromptInput.value.trim(),
   });
   settingsModal.classList.remove("open");
+});
+
+function renderHistory(entries) {
+  historyListEl.innerHTML = "";
+  if (!entries.length) {
+    historyListEl.innerHTML = '<div class="history-empty">Пока пусто</div>';
+    return;
+  }
+  for (const entry of entries) {
+    const item = document.createElement("div");
+    item.className = "history-item";
+
+    const header = document.createElement("div");
+    header.className = "history-item-header";
+
+    const label = document.createElement("span");
+    const typeSpan = document.createElement("span");
+    typeSpan.className = "history-item-type";
+    typeSpan.textContent = entry.type;
+    label.appendChild(typeSpan);
+    label.appendChild(document.createTextNode(" · " + new Date(entry.timestamp).toLocaleString("ru-RU")));
+
+    const copyEntryBtn = document.createElement("button");
+    copyEntryBtn.className = "mini-btn";
+    copyEntryBtn.textContent = "Копировать";
+    copyEntryBtn.addEventListener("click", () => window.api.copyText(entry.text));
+
+    header.appendChild(label);
+    header.appendChild(copyEntryBtn);
+
+    const textDiv = document.createElement("div");
+    textDiv.className = "history-item-text";
+    textDiv.textContent = entry.text;
+
+    item.appendChild(header);
+    item.appendChild(textDiv);
+    historyListEl.appendChild(item);
+  }
+}
+
+historyBtn.addEventListener("click", async () => {
+  const entries = await window.api.getHistory();
+  renderHistory(entries);
+  historyModal.classList.add("open");
+});
+
+closeHistory.addEventListener("click", () => historyModal.classList.remove("open"));
+
+clearHistoryBtn.addEventListener("click", async () => {
+  const entries = await window.api.clearHistory();
+  renderHistory(entries);
 });
 
 copyBtn.addEventListener("click", async () => {
@@ -198,7 +255,7 @@ async function sendForTranscription(buffer) {
   const mode = recordMode;
   statusEl.textContent = "Отправляю на транскрибацию...";
   try {
-    const { text, usage } = await window.api.transcribe(buffer, currentLanguage);
+    const { text, usage } = await window.api.transcribe(buffer, currentLanguage, mode);
     if (mode === "append" && resultEl.value.trim()) {
       resultEl.value = `${resultEl.value}\n${text}`;
     } else {

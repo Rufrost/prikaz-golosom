@@ -23,6 +23,7 @@ const languageInput = document.getElementById("language");
 const textModelInput = document.getElementById("textModel");
 const correctionPromptInput = document.getElementById("correctionPrompt");
 
+const themeToggleBtn = document.getElementById("themeToggle");
 const historyBtn = document.getElementById("historyBtn");
 const historyModal = document.getElementById("historyModal");
 const historyListEl = document.getElementById("historyList");
@@ -30,6 +31,34 @@ const closeHistory = document.getElementById("closeHistory");
 const clearHistoryBtn = document.getElementById("clearHistoryBtn");
 
 const CANCEL_WINDOW_MS = 1500;
+
+function applyTheme(theme) {
+  document.documentElement.setAttribute("data-theme", theme);
+  themeToggleBtn.textContent = theme === "dark" ? "\u2600\uFE0F" : "\uD83C\uDF19";
+  themeToggleBtn.title = theme === "dark" ? "Светлая тема" : "Тёмная тема";
+}
+
+function initTheme() {
+  let theme = null;
+  try {
+    theme = localStorage.getItem("theme");
+  } catch {}
+  if (theme !== "dark" && theme !== "light") {
+    theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  }
+  applyTheme(theme);
+}
+
+themeToggleBtn.addEventListener("click", () => {
+  const isDark = document.documentElement.getAttribute("data-theme") === "dark";
+  const next = isDark ? "light" : "dark";
+  try {
+    localStorage.setItem("theme", next);
+  } catch {}
+  applyTheme(next);
+});
+
+initTheme();
 
 let mediaRecorder = null;
 let chunks = [];

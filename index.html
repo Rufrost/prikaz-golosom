@@ -14,6 +14,27 @@
     --accent-hover: #4338ca;
     --danger: #dc2626;
     --border: #e5e7eb;
+    --hover: #f0f0f0;
+    --cancel-hover: #fee2e2;
+    --pause-bg: #fef3c7;
+    --pause-border: #d97706;
+    --pause-text: #92400e;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #15171c;
+    --panel: #1f2229;
+    --text: #e7e8ec;
+    --muted: #8b8f99;
+    --accent: #6366f1;
+    --accent-hover: #7c7ff2;
+    --danger: #f87171;
+    --border: #33363f;
+    --hover: #2a2d35;
+    --cancel-hover: #3a2228;
+    --pause-bg: #3a2f14;
+    --pause-border: #d97706;
+    --pause-text: #f0b95a;
   }
   * { box-sizing: border-box; }
   body {
@@ -101,13 +122,13 @@
     height: 56px;
     border-radius: 50%;
     border: 1px solid var(--border);
-    background: white;
+    background: var(--panel);
     color: var(--accent);
     font-size: 22px;
     cursor: pointer;
     transition: background 0.15s, transform 0.1s;
   }
-  #appendBtn:hover { background: #f0f0f0; }
+  #appendBtn:hover { background: var(--hover); }
   #appendBtn:active { transform: scale(0.96); }
   #appendBtn.recording {
     background: var(--danger);
@@ -133,35 +154,35 @@
     min-height: 26px;
   }
   #timer.active { color: var(--danger); }
-  #timer.paused { color: #d97706; }
+  #timer.paused { color: var(--pause-border); }
   .pause-btn {
     width: 40px;
     height: 40px;
     border-radius: 50%;
     border: 1px solid var(--border);
-    background: white;
+    background: var(--panel);
     color: var(--text);
     font-size: 16px;
     cursor: pointer;
     transition: background 0.15s, transform 0.1s;
   }
-  .pause-btn:hover { background: #f0f0f0; }
+  .pause-btn:hover { background: var(--hover); }
   .pause-btn:active { transform: scale(0.94); }
   .pause-btn.paused {
-    background: #fef3c7;
-    border-color: #d97706;
-    color: #92400e;
+    background: var(--pause-bg);
+    border-color: var(--pause-border);
+    color: var(--pause-text);
   }
   #cancelSendBtn {
     border: 1px solid var(--danger);
     color: var(--danger);
-    background: white;
+    background: var(--panel);
     border-radius: 6px;
     padding: 6px 14px;
     font-size: 13px;
     cursor: pointer;
   }
-  #cancelSendBtn:hover { background: #fee2e2; }
+  #cancelSendBtn:hover { background: var(--cancel-hover); }
   #status {
     font-size: 13px;
     color: var(--muted);
@@ -223,13 +244,13 @@
   }
   .mini-btn {
     border: 1px solid var(--border);
-    background: white;
+    background: var(--panel);
     border-radius: 6px;
     padding: 4px 10px;
     font-size: 12px;
     cursor: pointer;
   }
-  .mini-btn:hover { background: #f0f0f0; }
+  .mini-btn:hover { background: var(--hover); }
   .mini-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
   .modal-overlay {
@@ -278,7 +299,7 @@
   }
   .btn.primary { background: var(--accent); color: white; }
   .btn.primary:hover { background: var(--accent-hover); }
-  .btn.secondary { background: #f0f0f0; color: var(--text); }
+  .btn.secondary { background: var(--hover); color: var(--text); }
 
   .history-modal { width: 520px; }
   .history-list {
@@ -323,6 +344,7 @@
   <header>
     <h1>Приказ голосом</h1>
     <div class="header-actions">
+      <button class="gear" id="themeToggle" title="Тёмная тема">🌙</button>
       <button class="gear" id="historyBtn" title="История">🕘</button>
       <button class="gear" id="settingsBtn" title="Настройки">⚙</button>
     </div>

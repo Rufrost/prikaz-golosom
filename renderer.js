@@ -1,8 +1,11 @@
 const recordBtn = document.getElementById("recordBtn");
 const appendBtn = document.getElementById("appendBtn");
+const pauseBtn = document.getElementById("pauseBtn");
 const timerEl = document.getElementById("timer");
 const cancelSendBtn = document.getElementById("cancelSendBtn");
 const statusEl = document.getElementById("status");
+const statusTextEl = document.getElementById("statusText");
+const spinnerEl = document.getElementById("spinner");
 const resultEl = document.getElementById("result");
 const copyBtn = document.getElementById("copyBtn");
 const checkErrorsBtn = document.getElementById("checkErrorsBtn");
@@ -31,11 +34,18 @@ const CANCEL_WINDOW_MS = 1500;
 let mediaRecorder = null;
 let chunks = [];
 let isRecording = false;
+let isPaused = false;
 let recordMode = null; // "replace" | "append"
 let currentLanguage = "";
 let sessionTokenTotal = 0;
 let timerInterval = null;
 let recordingStartedAt = 0;
+let elapsedBeforePause = 0;
+
+function setStatus(text, busy = false) {
+  statusTextEl.textContent = text;
+  spinnerEl.hidden = !busy;
+}
 
 function formatDuration(ms) {
   const totalSeconds = Math.floor(ms / 1000);
@@ -46,10 +56,29 @@ function formatDuration(ms) {
 
 function startTimer() {
   recordingStartedAt = Date.now();
+  elapsedBeforePause = 0;
   timerEl.textContent = "00:00";
+  timerEl.classList.remove("paused");
   timerEl.classList.add("active");
   timerInterval = setInterval(() => {
-    timerEl.textContent = formatDuration(Date.now() - recordingStartedAt);
+    timerEl.textContent = formatDuration(elapsedBeforePause + (Date.now() - recordingStartedAt));
+  }, 250);
+}
+
+function pauseTimer() {
+  clearInterval(timerInterval);
+  timerInterval = null;
+  elapsedBeforePause += Date.now() - recordingStartedAt;
+  timerEl.classList.remove("active");
+  timerEl.classList.add("paused");
+}
+
+function resumeTimer() {
+  recordingStartedAt = Date.now();
+  timerEl.classList.remove("paused");
+  timerEl.classList.add("active");
+  timerInterval = setInterval(() => {
+    timerEl.textContent = formatDuration(elapsedBeforePause + (Date.now() - recordingStartedAt));
   }, 250);
 }
 
@@ -57,6 +86,7 @@ function stopTimer() {
   clearInterval(timerInterval);
   timerInterval = null;
   timerEl.classList.remove("active");
+  timerEl.classList.remove("paused");
 }
 
 function formatTokens(usage) {
@@ -157,14 +187,14 @@ copyBtn.addEventListener("click", async () => {
 checkErrorsBtn.addEventListener("click", async () => {
   if (!resultEl.value.trim()) return;
   checkErrorsBtn.disabled = true;
-  statusEl.textContent = "Проверяю текст на ошибки...";
+  setStatus("Проверяю текст на ошибки...", true);
   try {
     const { text, usage } = await window.api.correctText(resultEl.value);
     resultEl.value = text;
-    statusEl.textContent = "Ошибки исправлены";
+    setStatus("Ошибки исправлены", false);
     updateTokenStats(usage);
   } catch (err) {
-    statusEl.textContent = "Ошибка: " + (err.message || err);
+    setStatus("Ошибка: " + (err.message || err), false);
   } finally {
     checkErrorsBtn.disabled = false;
   }
@@ -174,7 +204,6 @@ async function startRecording(mode) {
   const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
   chunks = [];
   recordMode = mode;
-  if (mode === "replace") resultEl.value = "";
 
   mediaRecorder = new MediaRecorder(stream, { mimeType: "audio/webm" });
 
@@ -190,6 +219,7 @@ async function startRecording(mode) {
 
   mediaRecorder.start();
   isRecording = true;
+  isPaused = false;
 
   const activeBtn = mode === "replace" ? recordBtn : appendBtn;
   const otherBtn = mode === "replace" ? appendBtn : recordBtn;
@@ -197,10 +227,16 @@ async function startRecording(mode) {
   activeBtn.textContent = "⏹";
   otherBtn.disabled = true;
 
-  statusEl.textContent =
+  pauseBtn.hidden = false;
+  pauseBtn.textContent = "⏸";
+  pauseBtn.classList.remove("paused");
+
+  setStatus(
     mode === "replace"
       ? "Идёт запись... нажмите, чтобы остановить"
-      : "Идёт дозапись... нажмите, чтобы остановить";
+      : "Идёт дозапись... нажмите, чтобы остановить",
+    false
+  );
   startTimer();
 }
 
@@ -209,20 +245,48 @@ function stopRecording() {
     mediaRecorder.stop();
   }
   isRecording = false;
+  isPaused = false;
   recordBtn.classList.remove("recording");
   recordBtn.textContent = "🎙";
   appendBtn.classList.remove("recording");
   appendBtn.textContent = "➕";
   recordBtn.disabled = false;
   appendBtn.disabled = false;
+  pauseBtn.hidden = true;
+  pauseBtn.classList.remove("paused");
+  pauseBtn.textContent = "⏸";
   stopTimer();
 }
+
+pauseBtn.addEventListener("click", () => {
+  if (!mediaRecorder || !isRecording) return;
+  if (!isPaused) {
+    mediaRecorder.pause();
+    pauseTimer();
+    isPaused = true;
+    pauseBtn.textContent = "▶";
+    pauseBtn.classList.add("paused");
+    setStatus("Запись на паузе", false);
+  } else {
+    mediaRecorder.resume();
+    resumeTimer();
+    isPaused = false;
+    pauseBtn.textContent = "⏸";
+    pauseBtn.classList.remove("paused");
+    setStatus(
+      recordMode === "replace"
+        ? "Идёт запись... нажмите, чтобы остановить"
+        : "Идёт дозапись... нажмите, чтобы остановить",
+      false
+    );
+  }
+});
 
 function schedulePendingSend(buffer) {
   let remaining = Math.ceil(CANCEL_WINDOW_MS / 1000);
   cancelSendBtn.hidden = false;
   cancelSendBtn.textContent = `Отменить отправку (${remaining})`;
-  statusEl.textContent = "Можно отменить отправку...";
+  setStatus("Можно отменить отправку...", false);
   recordBtn.disabled = true;
   appendBtn.disabled = true;
 
@@ -231,29 +295,27 @@ function schedulePendingSend(buffer) {
     if (remaining > 0) cancelSendBtn.textContent = `Отменить отправку (${remaining})`;
   }, 1000);
 
-  const cleanup = () => {
+  cancelSendBtn.onclick = () => {
+    clearTimeout(sendTimer);
     clearInterval(countdown);
     cancelSendBtn.hidden = true;
     cancelSendBtn.onclick = null;
     recordBtn.disabled = false;
     appendBtn.disabled = false;
-  };
-
-  cancelSendBtn.onclick = () => {
-    clearTimeout(sendTimer);
-    cleanup();
-    statusEl.textContent = "Отправка отменена";
+    setStatus("Отправка отменена", false);
   };
 
   const sendTimer = setTimeout(() => {
-    cleanup();
+    clearInterval(countdown);
+    cancelSendBtn.hidden = true;
+    cancelSendBtn.onclick = null;
     sendForTranscription(buffer);
   }, CANCEL_WINDOW_MS);
 }
 
 async function sendForTranscription(buffer) {
   const mode = recordMode;
-  statusEl.textContent = "Отправляю на транскрибацию...";
+  setStatus("Отправляю на транскрибацию...", true);
   try {
     const { text, usage } = await window.api.transcribe(buffer, currentLanguage, mode);
     if (mode === "append" && resultEl.value.trim()) {
@@ -261,10 +323,13 @@ async function sendForTranscription(buffer) {
     } else {
       resultEl.value = text;
     }
-    statusEl.textContent = "Готово";
+    setStatus("Готово", false);
     updateTokenStats(usage);
   } catch (err) {
-    statusEl.textContent = "Ошибка: " + (err.message || err);
+    setStatus("Ошибка: " + (err.message || err), false);
+  } finally {
+    recordBtn.disabled = false;
+    appendBtn.disabled = false;
   }
 }
 
@@ -273,7 +338,7 @@ recordBtn.addEventListener("click", () => {
     stopRecording();
   } else {
     startRecording("replace").catch((err) => {
-      statusEl.textContent = "Не удалось получить доступ к микрофону: " + err.message;
+      setStatus("Не удалось получить доступ к микрофону: " + err.message, false);
     });
   }
 });
@@ -283,7 +348,7 @@ appendBtn.addEventListener("click", () => {
     stopRecording();
   } else {
     startRecording("append").catch((err) => {
-      statusEl.textContent = "Не удалось получить доступ к микрофону: " + err.message;
+      setStatus("Не удалось получить доступ к микрофону: " + err.message, false);
     });
   }
 });

@@ -133,6 +133,25 @@
     min-height: 26px;
   }
   #timer.active { color: var(--danger); }
+  #timer.paused { color: #d97706; }
+  .pause-btn {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    border: 1px solid var(--border);
+    background: white;
+    color: var(--text);
+    font-size: 16px;
+    cursor: pointer;
+    transition: background 0.15s, transform 0.1s;
+  }
+  .pause-btn:hover { background: #f0f0f0; }
+  .pause-btn:active { transform: scale(0.94); }
+  .pause-btn.paused {
+    background: #fef3c7;
+    border-color: #d97706;
+    color: #92400e;
+  }
   #cancelSendBtn {
     border: 1px solid var(--danger);
     color: var(--danger);
@@ -147,7 +166,23 @@
     font-size: 13px;
     color: var(--muted);
     min-height: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
   }
+  .spinner {
+    display: inline-block;
+    width: 13px;
+    height: 13px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    flex-shrink: 0;
+  }
+  .spinner[hidden] { display: none; }
+  @keyframes spin { to { transform: rotate(360deg); } }
   .token-stats {
     display: flex;
     gap: 16px;
@@ -305,9 +340,13 @@
           <span class="btn-caption">Дозаписать</span>
         </div>
       </div>
+      <button id="pauseBtn" class="pause-btn" hidden title="Пауза">⏸</button>
       <div id="timer">00:00</div>
       <button id="cancelSendBtn" hidden>Отменить отправку</button>
-      <div id="status">Нажмите, чтобы начать запись</div>
+      <div id="status">
+        <span id="spinner" class="spinner" hidden></span>
+        <span id="statusText">Нажмите, чтобы начать запись</span>
+      </div>
     </div>
 
     <div class="result-panel">

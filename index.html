@@ -204,14 +204,18 @@
   }
   .spinner[hidden] { display: none; }
   @keyframes spin { to { transform: rotate(360deg); } }
-  .token-stats {
+  .cost-stats {
     display: flex;
     gap: 16px;
     justify-content: center;
     font-size: 12px;
     color: var(--muted);
   }
-  .token-stats b { color: var(--text); }
+  .cost-stats b { color: var(--text); }
+  .cost-stats .partial-marker {
+    cursor: help;
+    color: var(--muted);
+  }
   .result-panel {
     background: var(--panel);
     border: 1px solid var(--border);
@@ -422,9 +426,9 @@
         </span>
       </label>
       <textarea id="result" placeholder="Здесь появится текст после записи..."></textarea>
-      <div class="token-stats">
-        <span>Последний запрос: <b id="lastTokens">—</b></span>
-        <span>За сессию: <b id="sessionTokens">0</b></span>
+      <div class="cost-stats">
+        <span>Последний запрос: <b id="lastCost">—</b></span>
+        <span>За сессию: <b id="sessionCost">0 ₽</b><span id="sessionCostPartial" class="partial-marker" hidden title="Стоимость известна не для всех запросов в сессии">*</span></span>
       </div>
     </div>
   </main>

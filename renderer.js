@@ -9,8 +9,9 @@ const spinnerEl = document.getElementById("spinner");
 const resultEl = document.getElementById("result");
 const copyBtn = document.getElementById("copyBtn");
 const checkErrorsBtn = document.getElementById("checkErrorsBtn");
-const lastTokensEl = document.getElementById("lastTokens");
-const sessionTokensEl = document.getElementById("sessionTokens");
+const lastCostEl = document.getElementById("lastCost");
+const sessionCostEl = document.getElementById("sessionCost");
+const sessionCostPartialEl = document.getElementById("sessionCostPartial");
 
 const settingsBtn = document.getElementById("settingsBtn");
 const settingsModal = document.getElementById("settingsModal");
@@ -76,7 +77,8 @@ let isRecording = false;
 let isPaused = false;
 let recordMode = null; // "replace" | "append"
 let currentLanguage = "";
-let sessionTokenTotal = 0;
+let sessionCostTotal = 0;
+let sessionCostHasUnknown = false;
 let timerInterval = null;
 let recordingStartedAt = 0;
 let elapsedBeforePause = 0;
@@ -128,15 +130,25 @@ function stopTimer() {
   timerEl.classList.remove("paused");
 }
 
-function formatTokens(usage) {
-  if (!usage) return "—";
-  return usage.estimated ? `≈${usage.total}` : `${usage.total}`;
+// cost — число рублей из usage.cost_rub ответа API, либо null, если провайдер
+// его не прислал (например, асинхронные aiesa/*-модели). Оценок не делаем —
+// в этом случае честно показываем «—», а не выдуманную цифру.
+function formatRub(amount) {
+  if (amount === 0) return "0 ₽";
+  const decimals = Math.abs(amount) < 0.01 ? 4 : 2;
+  return `${amount.toFixed(decimals)} ₽`;
 }
 
-function updateTokenStats(usage) {
-  lastTokensEl.textContent = formatTokens(usage);
-  sessionTokenTotal += usage?.total || 0;
-  sessionTokensEl.textContent = String(sessionTokenTotal);
+function updateCostStats(cost) {
+  const known = typeof cost === "number" && Number.isFinite(cost);
+  lastCostEl.textContent = known ? formatRub(cost) : "—";
+  if (known) {
+    sessionCostTotal += cost;
+  } else {
+    sessionCostHasUnknown = true;
+  }
+  sessionCostEl.textContent = formatRub(sessionCostTotal);
+  sessionCostPartialEl.hidden = !sessionCostHasUnknown;
 }
 
 let appVersion = null;
@@ -302,10 +314,10 @@ checkErrorsBtn.addEventListener("click", async () => {
   checkErrorsBtn.disabled = true;
   setStatus("Проверяю текст на ошибки...", true);
   try {
-    const { text, usage } = await window.api.correctText(resultEl.value);
+    const { text, cost } = await window.api.correctText(resultEl.value);
     resultEl.value = text;
     setStatus("Ошибки исправлены", false);
-    updateTokenStats(usage);
+    updateCostStats(cost);
   } catch (err) {
     setStatus("Ошибка: " + (err.message || err), false);
   } finally {
@@ -430,14 +442,14 @@ async function sendForTranscription(buffer) {
   const mode = recordMode;
   setStatus("Отправляю на транскрибацию...", true);
   try {
-    const { text, usage } = await window.api.transcribe(buffer, currentLanguage, mode);
+    const { text, cost } = await window.api.transcribe(buffer, currentLanguage, mode);
     if (mode === "append" && resultEl.value.trim()) {
       resultEl.value = `${resultEl.value}\n${text}`;
     } else {
       resultEl.value = text;
     }
     setStatus("Готово", false);
-    updateTokenStats(usage);
+    updateCostStats(cost);
   } catch (err) {
     setStatus("Ошибка: " + (err.message || err), false);
   } finally {

@@ -72,11 +72,12 @@ function addHistoryEntry(type, text) {
   return trimmed;
 }
 
-// Грубая оценка на случай, если провайдер/модель не возвращает точный usage
-// (whisper-подобные модели тарифицируются по длительности аудио, а не по токенам).
-function estimateTokens(text) {
-  if (!text) return 0;
-  return Math.max(1, Math.ceil(text.length / 4));
+// polza.ai сам считает стоимость запроса и отдаёт её в usage.cost_rub (иногда
+// продублирована в usage.cost) — берём готовое значение, ничего не прикидываем.
+function extractCostRub(usage) {
+  if (!usage) return null;
+  const value = usage.cost_rub ?? usage.cost;
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
 function createWindow() {
@@ -189,16 +190,11 @@ ipcMain.handle("transcribe", async (_event, { buffer, language, mode }) => {
     });
 
     const text = transcription.text;
-    // Часть провайдеров/моделей (напр. whisper-1) не возвращает usage вовсе —
-    // тогда считаем это приблизительно по длине текста и помечаем как оценку.
-    const rawUsage = transcription.usage;
-    const usage = rawUsage && typeof rawUsage.total_tokens === "number"
-      ? { total: rawUsage.total_tokens, estimated: false }
-      : { total: estimateTokens(text), estimated: true };
+    const cost = extractCostRub(transcription.usage);
 
     addHistoryEntry(mode === "append" ? "дозапись" : "запись", text);
 
-    return { text, usage };
+    return { text, cost };
   } finally {
     fs.unlink(tmpFile, () => {});
   }
@@ -228,12 +224,9 @@ ipcMain.handle("correct-text", async (_event, { text }) => {
   });
 
   const corrected = completion.choices[0]?.message?.content?.trim() || text;
-  const rawUsage = completion.usage;
-  const usage = rawUsage && typeof rawUsage.total_tokens === "number"
-    ? { total: rawUsage.total_tokens, estimated: false }
-    : { total: estimateTokens(text) + estimateTokens(corrected), estimated: true };
+  const cost = extractCostRub(completion.usage);
 
   addHistoryEntry("исправление", corrected);
 
-  return { text: corrected, usage };
+  return { text: corrected, cost };
 });

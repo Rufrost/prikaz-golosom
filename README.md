@@ -6,7 +6,7 @@
 ## Готовая portable-версия
 
 Portable-версия не хранится в репозитории — она публикуется как GitHub Release. После
-`npm run dist` файл `dist/Приказ голосом portable <версия>.exe` можно скопировать на
+`npm run dist` файл `dist/prikaz-golosom-portable-<версия>.exe` можно скопировать на
 любую Windows-машину и запустить напрямую, без установки Node.js, либо загрузить как
 ассет в GitHub Release.
 
@@ -54,8 +54,8 @@ npm run dist
 ```
 
 В папке `dist/` появятся:
-- `Приказ голосом Setup <версия>.exe` — установщик (NSIS)
-- `Приказ голосом portable <версия>.exe` — portable-версия без установки
+- `prikaz-golosom-setup-<версия>.exe` — установщик (NSIS)
+- `prikaz-golosom-portable-<версия>.exe` — portable-версия без установки
 
 exe не подписаны цифровой подписью — при первом запуске Windows SmartScreen может
 показать предупреждение, снимается через «Подробнее → Выполнить в любом случае».

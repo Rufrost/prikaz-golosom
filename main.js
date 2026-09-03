@@ -3,6 +3,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const os = require("node:os");
 const OpenAI = require("openai");
+const updater = require("./updater");
 
 const CONFIG_PATH = path.join(app.getPath("userData"), "config.json");
 const HISTORY_PATH = path.join(app.getPath("userData"), "history.json");
@@ -127,6 +128,43 @@ ipcMain.handle("get-history", () => loadHistory());
 ipcMain.handle("clear-history", () => {
   saveHistory([]);
   return [];
+});
+
+ipcMain.handle("get-app-version", () => app.getVersion());
+
+ipcMain.handle("check-for-updates", async () => {
+  try {
+    return await updater.checkForUpdate(app.getVersion());
+  } catch (e) {
+    return { hasUpdate: false, error: e.message };
+  }
+});
+
+ipcMain.handle("install-update", async (event, asset) => {
+  // Portable-сборка электрон-билдера при запуске распаковывает себя во временную
+  // папку — process.execPath там указывает на временную копию, а не на файл,
+  // который реально запустил пользователь. Настоящий путь NSIS-обёртка кладёт
+  // в PORTABLE_EXECUTABLE_FILE перед запуском распакованного приложения.
+  const targetPath = process.env.PORTABLE_EXECUTABLE_FILE;
+  if (!targetPath) {
+    return {
+      ok: false,
+      error: "Автообновление работает только в portable-версии приложения.",
+    };
+  }
+  try {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    const destPath = await updater.downloadAndVerify(asset, (fraction) => {
+      if (win && !win.isDestroyed()) {
+        win.webContents.send("update-download-progress", fraction);
+      }
+    });
+    await updater.scheduleSelfReplace(destPath, targetPath);
+    setTimeout(() => app.quit(), 300);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
 });
 
 ipcMain.handle("transcribe", async (_event, { buffer, language, mode }) => {

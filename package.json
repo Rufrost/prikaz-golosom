@@ -1,11 +1,12 @@
 {
   "name": "prikaz-golosom",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Запись голоса и отправка в polza.ai (OpenAI-совместимый API) для транскрибации",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "dist": "electron-builder --win"
+    "dist": "electron-builder --win",
+    "hash": "node scripts/generate-sha256.js"
   },
   "dependencies": {
     "openai": "^4.68.0"
@@ -18,15 +19,20 @@
     "appId": "com.prikazgolosom.app",
     "productName": "Приказ голосом",
     "win": {
-      "target": ["nsis", "portable"]
+      "target": ["nsis", "portable"],
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "artifactName": "prikaz-golosom-setup-${version}.exe"
     },
     "portable": {
-      "artifactName": "${productName} portable ${version}.exe"
+      "artifactName": "prikaz-golosom-portable-${version}.exe"
     },
     "files": [
       "main.js",
       "preload.js",
       "renderer.js",
+      "updater.js",
       "index.html",
       "package.json"
     ]

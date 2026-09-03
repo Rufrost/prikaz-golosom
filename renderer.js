@@ -23,6 +23,16 @@ const languageInput = document.getElementById("language");
 const textModelInput = document.getElementById("textModel");
 const correctionPromptInput = document.getElementById("correctionPrompt");
 
+const checkUpdateBtn = document.getElementById("checkUpdateBtn");
+const updateStatusEl = document.getElementById("updateStatus");
+const updateAvailableEl = document.getElementById("updateAvailable");
+const updateAvailableTextEl = document.getElementById("updateAvailableText");
+const installUpdateBtn = document.getElementById("installUpdateBtn");
+const dismissUpdateBtn = document.getElementById("dismissUpdateBtn");
+const updateProgressWrap = document.getElementById("updateProgressWrap");
+const updateProgressFill = document.getElementById("updateProgressFill");
+const updateProgressLabel = document.getElementById("updateProgressLabel");
+
 const themeToggleBtn = document.getElementById("themeToggle");
 const historyBtn = document.getElementById("historyBtn");
 const historyModal = document.getElementById("historyModal");
@@ -129,6 +139,16 @@ function updateTokenStats(usage) {
   sessionTokensEl.textContent = String(sessionTokenTotal);
 }
 
+let appVersion = null;
+let pendingUpdateAsset = null;
+
+async function refreshVersionLabel() {
+  if (!appVersion) {
+    appVersion = await window.api.getAppVersion();
+  }
+  updateStatusEl.textContent = `Текущая версия: ${appVersion}`;
+}
+
 async function openSettings() {
   const config = await window.api.getConfig();
   apiKeyInput.value = config.apiKey || "";
@@ -137,11 +157,75 @@ async function openSettings() {
   languageInput.value = currentLanguage;
   textModelInput.value = config.textModel || "gpt-4o-mini";
   correctionPromptInput.value = config.correctionPrompt || "";
+  updateAvailableEl.hidden = true;
+  updateProgressWrap.hidden = true;
+  pendingUpdateAsset = null;
+  await refreshVersionLabel();
   settingsModal.classList.add("open");
 }
 
 settingsBtn.addEventListener("click", openSettings);
 closeSettings.addEventListener("click", () => settingsModal.classList.remove("open"));
+
+checkUpdateBtn.addEventListener("click", async () => {
+  checkUpdateBtn.disabled = true;
+  updateAvailableEl.hidden = true;
+  pendingUpdateAsset = null;
+  updateStatusEl.textContent = "Проверяем обновления...";
+  try {
+    const result = await window.api.checkForUpdates();
+    if (result.error) {
+      updateStatusEl.textContent = `Текущая версия: ${appVersion}. Ошибка проверки: ${result.error}`;
+    } else if (result.hasUpdate) {
+      updateStatusEl.textContent = `Текущая версия: ${appVersion}`;
+      pendingUpdateAsset = result.asset;
+      const latest = String(result.latestVersion).replace(/^v/i, "");
+      updateAvailableTextEl.textContent = `Доступна версия ${latest}. Файл будет скачан, проверен и приложение перезапустится с обновлением.`;
+      updateAvailableEl.hidden = false;
+    } else {
+      updateStatusEl.textContent = `У вас последняя версия (${appVersion}).`;
+    }
+  } catch (e) {
+    updateStatusEl.textContent = `Текущая версия: ${appVersion}. Ошибка проверки: ${e.message}`;
+  } finally {
+    checkUpdateBtn.disabled = false;
+  }
+});
+
+dismissUpdateBtn.addEventListener("click", () => {
+  updateAvailableEl.hidden = true;
+  pendingUpdateAsset = null;
+});
+
+installUpdateBtn.addEventListener("click", async () => {
+  if (!pendingUpdateAsset) return;
+  installUpdateBtn.disabled = true;
+  dismissUpdateBtn.disabled = true;
+  updateProgressWrap.hidden = false;
+  updateProgressFill.style.width = "0%";
+  updateProgressLabel.textContent = "0%";
+  updateAvailableTextEl.textContent = "Скачивание обновления...";
+  try {
+    const result = await window.api.installUpdate(pendingUpdateAsset);
+    if (result.ok) {
+      updateAvailableTextEl.textContent = "Обновление скачано и проверено. Приложение сейчас перезапустится...";
+    } else {
+      updateAvailableTextEl.textContent = `Не удалось обновить: ${result.error}`;
+      installUpdateBtn.disabled = false;
+      dismissUpdateBtn.disabled = false;
+    }
+  } catch (e) {
+    updateAvailableTextEl.textContent = `Не удалось обновить: ${e.message}`;
+    installUpdateBtn.disabled = false;
+    dismissUpdateBtn.disabled = false;
+  }
+});
+
+window.api.onUpdateProgress((fraction) => {
+  const pct = Math.round(fraction * 100);
+  updateProgressFill.style.width = `${pct}%`;
+  updateProgressLabel.textContent = `${pct}%`;
+});
 
 saveSettings.addEventListener("click", async () => {
   currentLanguage = languageInput.value.trim();

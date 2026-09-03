@@ -301,6 +301,48 @@
   .btn.primary:hover { background: var(--accent-hover); }
   .btn.secondary { background: var(--hover); color: var(--text); }
 
+  .update-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: 13px;
+  }
+  .update-available {
+    margin-top: 8px;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--hover);
+    font-size: 13px;
+  }
+  .update-available p { margin: 0; }
+  .update-progress-wrap {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 8px;
+  }
+  .update-progress-bar {
+    flex: 1;
+    height: 6px;
+    border-radius: 3px;
+    background: var(--border);
+    overflow: hidden;
+  }
+  .update-progress-fill {
+    height: 100%;
+    width: 0%;
+    background: var(--accent);
+    transition: width 0.15s ease;
+  }
+  .update-progress-wrap span {
+    font-size: 12px;
+    color: var(--muted);
+    min-width: 34px;
+    text-align: right;
+  }
+
   .history-modal { width: 520px; }
   .history-list {
     display: flex;
@@ -413,6 +455,24 @@
       <div class="field">
         <label>Промпт для исправления ошибок</label>
         <textarea id="correctionPrompt" rows="4"></textarea>
+      </div>
+      <div class="field update-section">
+        <label>Обновления</label>
+        <div class="update-row">
+          <span id="updateStatus">Текущая версия: —</span>
+          <button class="mini-btn" id="checkUpdateBtn">Проверить обновления</button>
+        </div>
+        <div id="updateAvailable" class="update-available" hidden>
+          <p id="updateAvailableText"></p>
+          <div class="update-progress-wrap" id="updateProgressWrap" hidden>
+            <div class="update-progress-bar"><div class="update-progress-fill" id="updateProgressFill"></div></div>
+            <span id="updateProgressLabel">0%</span>
+          </div>
+          <div class="modal-actions" style="margin-top:8px;">
+            <button class="btn secondary" id="dismissUpdateBtn">Позже</button>
+            <button class="btn primary" id="installUpdateBtn">Обновить и перезапустить</button>
+          </div>
+        </div>
       </div>
       <div class="modal-actions">
         <button class="btn secondary" id="closeSettings">Отмена</button>

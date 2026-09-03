@@ -8,4 +8,9 @@ contextBridge.exposeInMainWorld("api", {
   correctText: (text) => ipcRenderer.invoke("correct-text", { text }),
   getHistory: () => ipcRenderer.invoke("get-history"),
   clearHistory: () => ipcRenderer.invoke("clear-history"),
+  getAppVersion: () => ipcRenderer.invoke("get-app-version"),
+  checkForUpdates: () => ipcRenderer.invoke("check-for-updates"),
+  installUpdate: (asset) => ipcRenderer.invoke("install-update", asset),
+  onUpdateProgress: (callback) =>
+    ipcRenderer.on("update-download-progress", (_event, fraction) => callback(fraction)),
 });

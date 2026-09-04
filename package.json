@@ -1,6 +1,6 @@
 {
   "name": "prikaz-golosom",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Запись голоса и отправка в polza.ai (OpenAI-совместимый API) для транскрибации",
   "main": "main.js",
   "scripts": {

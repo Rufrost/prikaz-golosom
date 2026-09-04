@@ -29,6 +29,7 @@ const DEFAULT_CONFIG = {
   model: "whisper-1",
   textModel: "gpt-4o-mini",
   correctionPrompt: DEFAULT_CORRECTION_PROMPT,
+  language: "",
 };
 
 function loadConfig() {

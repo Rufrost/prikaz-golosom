@@ -83,6 +83,12 @@ let timerInterval = null;
 let recordingStartedAt = 0;
 let elapsedBeforePause = 0;
 
+async function initLanguage() {
+  const config = await window.api.getConfig();
+  currentLanguage = config.language || "";
+}
+initLanguage();
+
 function setStatus(text, busy = false) {
   statusTextEl.textContent = text;
   spinnerEl.hidden = !busy;
@@ -166,7 +172,7 @@ async function openSettings() {
   apiKeyInput.value = config.apiKey || "";
   baseUrlInput.value = config.baseUrl || "https://api.polza.ai/v1";
   modelInput.value = config.model || "whisper-1";
-  languageInput.value = currentLanguage;
+  languageInput.value = config.language || "";
   textModelInput.value = config.textModel || "gpt-4o-mini";
   correctionPromptInput.value = config.correctionPrompt || "";
   updateAvailableEl.hidden = true;
@@ -247,6 +253,7 @@ saveSettings.addEventListener("click", async () => {
     model: modelInput.value.trim() || "whisper-1",
     textModel: textModelInput.value.trim() || "gpt-4o-mini",
     correctionPrompt: correctionPromptInput.value.trim(),
+    language: currentLanguage,
   });
   settingsModal.classList.remove("open");
 });

@@ -1,6 +1,7 @@
 {
   "name": "prikaz-golosom",
-  "version": "1.2.1",
+  "productName": "Prikaz golosom",
+  "version": "1.2.2",
   "description": "Запись голоса и отправка в polza.ai (OpenAI-совместимый API) для транскрибации",
   "main": "main.js",
   "scripts": {
@@ -17,12 +18,12 @@
   },
   "build": {
     "appId": "com.prikazgolosom.app",
-    "productName": "Приказ голосом",
     "win": {
       "target": ["nsis", "portable"],
       "signAndEditExecutable": false
     },
     "nsis": {
+      "shortcutName": "Prikaz golosom",
       "artifactName": "prikaz-golosom-setup-${version}.exe"
     },
     "portable": {
@@ -33,6 +34,7 @@
       "preload.js",
       "renderer.js",
       "updater.js",
+      "recordings.js",
       "index.html",
       "package.json"
     ]

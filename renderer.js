@@ -41,6 +41,22 @@ const historyListEl = document.getElementById("historyList");
 const closeHistory = document.getElementById("closeHistory");
 const clearHistoryBtn = document.getElementById("clearHistoryBtn");
 
+const stallBox = document.getElementById("stallBox");
+const stallTextEl = document.getElementById("stallText");
+const stallChangeBtn = document.getElementById("stallChangeBtn");
+const stallModelRow = document.getElementById("stallModelRow");
+const stallModelInput = document.getElementById("stallModelInput");
+const stallSendBtn = document.getElementById("stallSendBtn");
+
+const unfinishedBtn = document.getElementById("unfinishedBtn");
+const unfinishedBadge = document.getElementById("unfinishedBadge");
+const unfinishedBanner = document.getElementById("unfinishedBanner");
+const unfinishedBannerText = document.getElementById("unfinishedBannerText");
+const unfinishedBannerOpen = document.getElementById("unfinishedBannerOpen");
+const unfinishedModal = document.getElementById("unfinishedModal");
+const unfinishedListEl = document.getElementById("unfinishedList");
+const closeUnfinished = document.getElementById("closeUnfinished");
+
 const CANCEL_WINDOW_MS = 1500;
 
 function applyTheme(theme) {
@@ -82,6 +98,13 @@ let sessionCostHasUnknown = false;
 let timerInterval = null;
 let recordingStartedAt = 0;
 let elapsedBeforePause = 0;
+let lastRecordingDurationMs = 0;
+
+// Незавершённые записи: состояние приходит из main-процесса целиком.
+let unfinishedState = { items: [], flights: [] };
+let countdownId = null; // запись в окне «Отменить отправку»
+let savingRecording = false; // свежая запись пишется на диск, id ещё не известен
+let currentSendId = null; // запись, отправку которой ждёт главный экран
 
 async function initLanguage() {
   const config = await window.api.getConfig();
@@ -343,10 +366,23 @@ async function startRecording(mode) {
     if (e.data.size > 0) chunks.push(e.data);
   };
 
-  mediaRecorder.onstop = () => {
+  mediaRecorder.onstop = async () => {
     stream.getTracks().forEach((t) => t.stop());
     const blob = new Blob(chunks, { type: "audio/webm" });
-    blob.arrayBuffer().then((buf) => schedulePendingSend(buf));
+    try {
+      // Сначала на диск, потом всё остальное: с этого момента запись не
+      // теряется ни при ошибке, ни при закрытии приложения.
+      const buf = await blob.arrayBuffer();
+      savingRecording = true;
+      const id = await window.api.saveRecording(buf, lastRecordingDurationMs, mode, currentLanguage);
+      savingRecording = false;
+      schedulePendingSend(id);
+    } catch (err) {
+      savingRecording = false;
+      setStatus("Не удалось сохранить запись: " + (err.message || err), false);
+      recordBtn.disabled = false;
+      appendBtn.disabled = false;
+    }
   };
 
   mediaRecorder.start();
@@ -373,6 +409,8 @@ async function startRecording(mode) {
 }
 
 function stopRecording() {
+  lastRecordingDurationMs =
+    elapsedBeforePause + (isPaused ? 0 : Date.now() - recordingStartedAt);
   if (mediaRecorder && isRecording) {
     mediaRecorder.stop();
   }
@@ -414,7 +452,9 @@ pauseBtn.addEventListener("click", () => {
   }
 });
 
-function schedulePendingSend(buffer) {
+function schedulePendingSend(id) {
+  countdownId = id;
+  renderUnfinished();
   let remaining = Math.ceil(CANCEL_WINDOW_MS / 1000);
   cancelSendBtn.hidden = false;
   cancelSendBtn.textContent = `Отменить отправку (${remaining})`;
@@ -429,6 +469,8 @@ function schedulePendingSend(buffer) {
 
   cancelSendBtn.onclick = () => {
     clearTimeout(sendTimer);
+    countdownId = null;
+    window.api.discardRecording(id);
     clearInterval(countdown);
     cancelSendBtn.hidden = true;
     cancelSendBtn.onclick = null;
@@ -441,29 +483,350 @@ function schedulePendingSend(buffer) {
     clearInterval(countdown);
     cancelSendBtn.hidden = true;
     cancelSendBtn.onclick = null;
-    sendForTranscription(buffer);
+    countdownId = null;
+    sendForTranscription(id);
   }, CANCEL_WINDOW_MS);
 }
 
-async function sendForTranscription(buffer) {
-  const mode = recordMode;
+function insertTranscript(text, mode) {
+  if (mode === "append" && resultEl.value.trim()) {
+    resultEl.value = `${resultEl.value}\n${text}`;
+  } else {
+    resultEl.value = text;
+  }
+}
+
+async function sendForTranscription(id) {
+  currentSendId = id;
   setStatus("Отправляю на транскрибацию...", true);
+  const ticker = setInterval(refreshSendingStatus, 1000);
   try {
-    const { text, cost } = await window.api.transcribe(buffer, currentLanguage, mode);
-    if (mode === "append" && resultEl.value.trim()) {
-      resultEl.value = `${resultEl.value}\n${text}`;
+    // Резолвится всегда, даже если модель меняли посреди отправки: main
+    // передаёт сюда итог последнего запроса по этой записи.
+    const outcome = await window.api.sendRecording(id);
+    if (outcome.ok) {
+      insertTranscript(outcome.text, outcome.mode);
+      setStatus("Готово", false);
+      updateCostStats(outcome.cost);
+    } else if (outcome.cancelled) {
+      setStatus("Отправка отменена: запись удалена", false);
     } else {
-      resultEl.value = text;
+      setStatus(`Ошибка: ${outcome.error} Запись сохранена в «Незавершённых» 📥`, false);
     }
-    setStatus("Готово", false);
-    updateCostStats(cost);
   } catch (err) {
     setStatus("Ошибка: " + (err.message || err), false);
   } finally {
+    clearInterval(ticker);
+    currentSendId = null;
+    hideStallBox();
     recordBtn.disabled = false;
     appendBtn.disabled = false;
+    renderUnfinished();
   }
 }
+
+// ---- Зависшая отправка: «Сменить модель» ----
+
+function flightOf(id) {
+  return unfinishedState.flights.find((f) => f.id === id) || null;
+}
+
+function secondsSince(ts) {
+  return Math.max(0, Math.floor((Date.now() - ts) / 1000));
+}
+
+function hideStallBox() {
+  stallBox.hidden = true;
+  stallModelRow.hidden = true;
+  stallChangeBtn.hidden = false;
+}
+
+function refreshSendingStatus() {
+  if (!currentSendId) return;
+  const flight = flightOf(currentSendId);
+  if (!flight) return;
+  const elapsed = secondsSince(flight.startedAt);
+  setStatus(`Отправляю на транскрибацию (модель «${flight.model}»)... ${elapsed} с`, true);
+  if (flight.stalled) {
+    stallTextEl.textContent = `Ответа нет уже ${elapsed} с. Можно отправить эту же запись другой моделью.`;
+    stallBox.hidden = false;
+  } else {
+    hideStallBox();
+  }
+}
+
+stallChangeBtn.addEventListener("click", () => {
+  const flight = currentSendId && flightOf(currentSendId);
+  stallModelInput.value = flight ? flight.model : "";
+  stallChangeBtn.hidden = true;
+  stallModelRow.hidden = false;
+  stallModelInput.focus();
+  stallModelInput.select();
+});
+
+function resendCurrentWithModel() {
+  const model = stallModelInput.value.trim();
+  if (!currentSendId || !model) return;
+  // Итог придёт в уже ожидающий sendForTranscription — старый запрос main обрывает.
+  window.api.sendRecording(currentSendId, model);
+  hideStallBox();
+}
+
+stallSendBtn.addEventListener("click", resendCurrentWithModel);
+stallModelInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") resendCurrentWithModel();
+});
+
+// ---- Незавершённые записи ----
+
+// Требуют внимания: всё, кроме записей, которые прямо сейчас нормально
+// отправляются или ждут окончания «Отменить отправку». Здоровая отправка
+// длится секунды — баннер не должен мигать на каждую диктовку.
+function needsAttention() {
+  return unfinishedState.items.filter((item) => {
+    const flight = flightOf(item.id);
+    if (flight) return flight.stalled;
+    if (savingRecording && item.status === "pending" && !item.attempts) return false;
+    return item.id !== countdownId;
+  });
+}
+
+function pluralRecords(n) {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod10 === 1 && mod100 !== 11) return "незавершённая запись";
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return "незавершённые записи";
+  return "незавершённых записей";
+}
+
+function renderBanner() {
+  const count = needsAttention().length;
+  unfinishedBadge.hidden = count === 0;
+  unfinishedBadge.textContent = String(count);
+  unfinishedBanner.hidden = count === 0;
+  unfinishedBannerText.textContent =
+    `⚠ У вас ${count} ${pluralRecords(count)}. Аудио сохранено — их можно прослушать и отправить заново.`;
+}
+
+// Раскрытые поля ввода модели переживают перерисовку списка.
+const modelDrafts = new Map();
+let playing = null; // { id, audio, url }
+let defaultModel = "whisper-1";
+
+function stopPlayback() {
+  if (!playing) return;
+  playing.audio.pause();
+  URL.revokeObjectURL(playing.url);
+  playing = null;
+}
+
+async function togglePlayback(id) {
+  const wasSame = playing && playing.id === id;
+  stopPlayback();
+  if (!wasSame) {
+    try {
+      const data = await window.api.getUnfinishedAudio(id);
+      const url = URL.createObjectURL(new Blob([data], { type: "audio/webm" }));
+      const audio = new Audio(url);
+      playing = { id, audio, url };
+      audio.onended = () => {
+        stopPlayback();
+        renderUnfinished();
+      };
+      await audio.play();
+    } catch (err) {
+      stopPlayback();
+      alert("Не удалось воспроизвести запись: " + (err.message || err));
+    }
+  }
+  renderUnfinished();
+}
+
+function sinceSpan(ts) {
+  const span = document.createElement("span");
+  span.dataset.since = String(ts);
+  span.textContent = String(secondsSince(ts));
+  return span;
+}
+
+function buildItemStatus(item) {
+  const el = document.createElement("div");
+  el.className = "unfinished-status";
+  const flight = flightOf(item.id);
+  if (flight) {
+    el.classList.add(flight.stalled ? "stalled" : "busy");
+    el.append(
+      flight.stalled ? "Нет ответа " : "Отправляется ",
+      sinceSpan(flight.startedAt),
+      ` с — модель «${flight.model}»`
+    );
+  } else if (item.id === countdownId) {
+    el.classList.add("busy");
+    el.textContent = "Ожидает отправки";
+  } else {
+    el.classList.add("error");
+    el.textContent = item.lastError ? `Ошибка: ${item.lastError}` : "Не отправлена";
+  }
+  return el;
+}
+
+async function resendFromList(item, model) {
+  modelDrafts.delete(item.id);
+  const promise = window.api.sendRecording(item.id, model);
+  renderUnfinished();
+  const outcome = await promise;
+  // Свежую запись главного экрана обрабатывает её собственный sendForTranscription.
+  if (item.id === currentSendId) return;
+  if (outcome.ok) {
+    // Дописываем, а не заменяем: пользователь мог уже работать с текстом в поле.
+    insertTranscript(outcome.text, "append");
+    updateCostStats(outcome.cost);
+    setStatus("Незавершённая запись расшифрована — текст добавлен в поле и в историю", false);
+  }
+}
+
+function openModelInput(item) {
+  if (!modelDrafts.has(item.id)) {
+    const flight = flightOf(item.id);
+    const last = item.triedModels && item.triedModels[item.triedModels.length - 1];
+    modelDrafts.set(item.id, (flight && flight.model) || last || defaultModel);
+  }
+  renderUnfinished();
+  const input = unfinishedListEl.querySelector(`input[data-model-for="${item.id}"]`);
+  if (input) {
+    input.focus();
+    input.select();
+  }
+}
+
+function buildModelRow(item) {
+  const row = document.createElement("div");
+  row.className = "model-row";
+  const input = document.createElement("input");
+  input.type = "text";
+  input.placeholder = "Название модели";
+  input.value = modelDrafts.get(item.id);
+  input.dataset.modelFor = item.id;
+  input.addEventListener("input", () => modelDrafts.set(item.id, input.value));
+  const go = document.createElement("button");
+  go.className = "mini-btn";
+  go.textContent = "Отправить";
+  const submit = () => {
+    const model = input.value.trim();
+    if (model) resendFromList(item, model);
+  };
+  go.addEventListener("click", submit);
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") submit();
+    if (e.key === "Escape") {
+      modelDrafts.delete(item.id);
+      renderUnfinished();
+    }
+  });
+  row.append(input, go);
+  return row;
+}
+
+function renderUnfinished() {
+  renderBanner();
+  if (!unfinishedModal.classList.contains("open")) return;
+
+  const focusedId = document.activeElement?.dataset?.modelFor ?? null;
+  unfinishedListEl.innerHTML = "";
+  if (!unfinishedState.items.length) {
+    unfinishedListEl.innerHTML = '<div class="history-empty">Незавершённых записей нет</div>';
+    return;
+  }
+
+  for (const item of unfinishedState.items) {
+    const flight = flightOf(item.id);
+    const inCountdown = item.id === countdownId;
+    const el = document.createElement("div");
+    el.className = "unfinished-item";
+
+    const meta = document.createElement("div");
+    meta.className = "unfinished-meta";
+    const when = document.createElement("b");
+    when.textContent = new Date(item.createdAt).toLocaleString("ru-RU");
+    const models = item.triedModels && item.triedModels.length ? item.triedModels.join(", ") : "—";
+    meta.append(
+      when,
+      ` · длительность ${item.durationMs ? formatDuration(item.durationMs) : "—"}` +
+        ` · попыток: ${item.attempts || 0} · модели: ${models}`
+    );
+
+    const actions = document.createElement("div");
+    actions.className = "unfinished-actions";
+
+    const playBtn = document.createElement("button");
+    playBtn.className = "mini-btn";
+    playBtn.textContent = playing && playing.id === item.id ? "⏹ Стоп" : "▶ Прослушать";
+    playBtn.addEventListener("click", () => togglePlayback(item.id));
+
+    const sendBtn = document.createElement("button");
+    sendBtn.className = "mini-btn";
+    sendBtn.textContent = flight ? "Сменить модель…" : "Отправить заново…";
+    sendBtn.disabled = inCountdown;
+    sendBtn.addEventListener("click", () => openModelInput(item));
+
+    const deleteBtn = document.createElement("button");
+    deleteBtn.className = "mini-btn danger";
+    deleteBtn.textContent = "Удалить";
+    deleteBtn.disabled = inCountdown;
+    deleteBtn.addEventListener("click", async () => {
+      if (!confirm("Удалить запись вместе с аудио? Восстановить её будет нельзя.")) return;
+      if (playing && playing.id === item.id) stopPlayback();
+      modelDrafts.delete(item.id);
+      unfinishedState = await window.api.deleteUnfinished(item.id);
+      renderUnfinished();
+    });
+
+    actions.append(playBtn, sendBtn, deleteBtn);
+    el.append(meta, buildItemStatus(item), actions);
+    if (modelDrafts.has(item.id)) el.append(buildModelRow(item));
+    unfinishedListEl.appendChild(el);
+  }
+
+  if (focusedId) {
+    unfinishedListEl.querySelector(`input[data-model-for="${focusedId}"]`)?.focus();
+  }
+}
+
+// Секунды «отправляется / нет ответа» тикают без перерисовки списка,
+// чтобы не сбивать ввод названия модели.
+setInterval(() => {
+  for (const span of unfinishedListEl.querySelectorAll("span[data-since]")) {
+    span.textContent = String(secondsSince(Number(span.dataset.since)));
+  }
+}, 1000);
+
+async function openUnfinished() {
+  try {
+    defaultModel = (await window.api.getConfig()).model || defaultModel;
+  } catch {}
+  unfinishedState = await window.api.listUnfinished();
+  unfinishedModal.classList.add("open");
+  renderUnfinished();
+}
+
+unfinishedBtn.addEventListener("click", openUnfinished);
+unfinishedBannerOpen.addEventListener("click", openUnfinished);
+closeUnfinished.addEventListener("click", () => {
+  unfinishedModal.classList.remove("open");
+  modelDrafts.clear();
+  stopPlayback();
+});
+
+window.api.onUnfinishedChanged((state) => {
+  unfinishedState = state;
+  refreshSendingStatus();
+  renderUnfinished();
+});
+
+window.api.listUnfinished().then((state) => {
+  unfinishedState = state;
+  renderUnfinished();
+});
 
 recordBtn.addEventListener("click", () => {
   if (isRecording) {

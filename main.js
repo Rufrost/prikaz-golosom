@@ -1,9 +1,16 @@
 const { app, BrowserWindow, ipcMain, session, clipboard } = require("electron");
 const fs = require("node:fs");
 const path = require("node:path");
-const os = require("node:os");
 const OpenAI = require("openai");
 const updater = require("./updater");
+const { UnfinishedQueue, TranscriptSender } = require("./recordings");
+
+// Папку данных фиксируем явно. По умолчанию Electron берёт её имя из названия
+// приложения, и после переименования «Приказ голосом» -> «Prikaz golosom» она
+// сменилась бы — пользователь молча потерял бы API-ключ, историю, тему и очередь
+// незавершённых записей. Все версии до переименования жили в %APPDATA%\prikaz-golosom.
+// Вызов обязан стоять до любого app.getPath("userData") и до готовности app.
+app.setPath("userData", path.join(app.getPath("appData"), "prikaz-golosom"));
 
 const CONFIG_PATH = path.join(app.getPath("userData"), "config.json");
 const HISTORY_PATH = path.join(app.getPath("userData"), "history.json");
@@ -81,10 +88,34 @@ function extractCostRub(usage) {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
+function broadcastUnfinished() {
+  const state = getUnfinishedState();
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (!win.isDestroyed()) win.webContents.send("unfinished-changed", state);
+  }
+}
+
+const unfinishedQueue = new UnfinishedQueue(app.getPath("userData"), broadcastUnfinished);
+const sender = new TranscriptSender({
+  queue: unfinishedQueue,
+  loadConfig,
+  defaultBaseUrl: DEFAULT_CONFIG.baseUrl,
+  extractCostRub,
+  // Успех — как и раньше: запись в историю, текст уходит в окно.
+  onSuccess: (item, { text }) =>
+    addHistoryEntry(item?.mode === "append" ? "дозапись" : "запись", text),
+  onChange: broadcastUnfinished,
+});
+
+function getUnfinishedState() {
+  return { items: unfinishedQueue.list(), flights: sender.info() };
+}
+
 function createWindow() {
   const win = new BrowserWindow({
     width: 640,
-    height: 700,
+    height: 740,
+    title: "Prikaz golosom",
     resizable: false,
     autoHideMenuBar: true,
     webPreferences: {
@@ -98,6 +129,8 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  unfinishedQueue.recover();
+
   session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
     callback(permission === "media");
   });
@@ -169,36 +202,35 @@ ipcMain.handle("install-update", async (event, asset) => {
   }
 });
 
-ipcMain.handle("transcribe", async (_event, { buffer, language, mode }) => {
-  const config = loadConfig();
-  if (!config.apiKey) {
-    throw new Error("Не задан API-ключ polza.ai. Откройте настройки и укажите ключ.");
-  }
+// Запись сохраняется на диск сразу после остановки — ещё до окна «Отменить
+// отправку»: закрыли приложение в эти секунды — запись всё равно не пропадёт.
+ipcMain.handle("save-recording", (_event, { buffer, durationMs, mode, language }) =>
+  unfinishedQueue.add({ buffer, durationMs, mode, language })
+);
 
-  const tmpFile = path.join(os.tmpdir(), `prikaz-golosom-${Date.now()}.webm`);
-  fs.writeFileSync(tmpFile, Buffer.from(buffer));
+// «Отменить отправку» — явный выбор пользователя, файл удаляем.
+ipcMain.handle("discard-recording", (_event, id) => {
+  sender.cancel(id);
+  unfinishedQueue.remove(id);
+  return true;
+});
 
-  try {
-    const client = new OpenAI({
-      apiKey: config.apiKey,
-      baseURL: config.baseUrl || DEFAULT_CONFIG.baseUrl,
-    });
+// Резолвится всегда: { ok, text, cost } | { ok: false, error } | { ok: false, cancelled }.
+// Повторный вызов для той же записи (смена модели) обрывает висящий запрос.
+ipcMain.handle("send-recording", (_event, { id, model }) => sender.send(id, model));
 
-    const transcription = await client.audio.transcriptions.create({
-      file: fs.createReadStream(tmpFile),
-      model: config.model || DEFAULT_CONFIG.model,
-      ...(language ? { language } : {}),
-    });
+ipcMain.handle("list-unfinished", () => getUnfinishedState());
 
-    const text = transcription.text;
-    const cost = extractCostRub(transcription.usage);
+ipcMain.handle("delete-unfinished", (_event, id) => {
+  sender.cancel(id);
+  unfinishedQueue.remove(id);
+  return getUnfinishedState();
+});
 
-    addHistoryEntry(mode === "append" ? "дозапись" : "запись", text);
-
-    return { text, cost };
-  } finally {
-    fs.unlink(tmpFile, () => {});
-  }
+ipcMain.handle("get-unfinished-audio", (_event, id) => {
+  const item = unfinishedQueue.get(id);
+  if (!item) throw new Error("Запись не найдена.");
+  return fs.readFileSync(unfinishedQueue.filePath(item));
 });
 
 ipcMain.handle("correct-text", async (_event, { text }) => {
@@ -215,14 +247,18 @@ ipcMain.handle("correct-text", async (_event, { text }) => {
     baseURL: config.baseUrl || DEFAULT_CONFIG.baseUrl,
   });
 
-  const completion = await client.chat.completions.create({
-    model: config.textModel || DEFAULT_CONFIG.textModel,
-    temperature: 0,
-    messages: [
-      { role: "system", content: config.correctionPrompt || DEFAULT_CORRECTION_PROMPT },
-      { role: "user", content: text },
-    ],
-  });
+  // Без явного потолка SDK ждёт до 10 минут и ещё дважды повторяет запрос.
+  const completion = await client.chat.completions.create(
+    {
+      model: config.textModel || DEFAULT_CONFIG.textModel,
+      temperature: 0,
+      messages: [
+        { role: "system", content: config.correctionPrompt || DEFAULT_CORRECTION_PROMPT },
+        { role: "user", content: text },
+      ],
+    },
+    { timeout: 60_000, maxRetries: 0 }
+  );
 
   const corrected = completion.choices[0]?.message?.content?.trim() || text;
   const cost = extractCostRub(completion.usage);

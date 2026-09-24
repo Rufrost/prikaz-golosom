@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
 <meta charset="UTF-8" />
-<title>Приказ голосом</title>
+<title>Prikaz golosom</title>
 <style>
   :root {
     color-scheme: light;
@@ -19,6 +19,9 @@
     --pause-bg: #fef3c7;
     --pause-border: #d97706;
     --pause-text: #92400e;
+    --warn-bg: #fff7ed;
+    --warn-border: #ea580c;
+    --warn-text: #9a3412;
   }
   :root[data-theme="dark"] {
     color-scheme: dark;
@@ -35,6 +38,9 @@
     --pause-bg: #3a2f14;
     --pause-border: #d97706;
     --pause-text: #f0b95a;
+    --warn-bg: #3a2616;
+    --warn-border: #f97316;
+    --warn-text: #fdba74;
   }
   * { box-sizing: border-box; }
   body {
@@ -384,19 +390,107 @@
     text-align: center;
     padding: 20px 0;
   }
+
+  .gear-wrap { position: relative; }
+  .badge {
+    position: absolute;
+    top: -2px;
+    right: -4px;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
+    border-radius: 8px;
+    background: var(--danger);
+    color: white;
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 16px;
+    text-align: center;
+    pointer-events: none;
+  }
+  .badge[hidden] { display: none; }
+  .banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 14px;
+    border: 1px solid var(--warn-border);
+    border-radius: 10px;
+    background: var(--warn-bg);
+    color: var(--warn-text);
+    font-size: 13px;
+  }
+  .banner[hidden] { display: none; }
+  .stall-box {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    border: 1px solid var(--warn-border);
+    border-radius: 8px;
+    background: var(--warn-bg);
+    color: var(--warn-text);
+    font-size: 13px;
+    max-width: 100%;
+  }
+  .stall-box[hidden] { display: none; }
+  .model-row {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+  }
+  .model-row[hidden] { display: none; }
+  .model-row input {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 5px 8px;
+    font-size: 13px;
+    font-family: inherit;
+    width: 220px;
+  }
+
+  .unfinished-modal { width: 560px; }
+  .unfinished-hint { margin: 0; font-size: 12px; color: var(--muted); }
+  .unfinished-item {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .unfinished-meta { font-size: 12px; color: var(--muted); }
+  .unfinished-meta b { color: var(--text); font-weight: 600; }
+  .unfinished-status { font-size: 13px; word-break: break-word; }
+  .unfinished-status.error { color: var(--danger); }
+  .unfinished-status.busy { color: var(--accent); }
+  .unfinished-status.stalled { color: var(--warn-border); }
+  .unfinished-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+  .mini-btn.danger { color: var(--danger); }
 </style>
 </head>
 <body>
   <header>
-    <h1>Приказ голосом</h1>
+    <h1>Prikaz golosom</h1>
     <div class="header-actions">
       <button class="gear" id="themeToggle" title="Тёмная тема">🌙</button>
+      <span class="gear-wrap">
+        <button class="gear" id="unfinishedBtn" title="Незавершённые записи">📥</button>
+        <span class="badge" id="unfinishedBadge" hidden>0</span>
+      </span>
       <button class="gear" id="historyBtn" title="История">🕘</button>
       <button class="gear" id="settingsBtn" title="Настройки">⚙</button>
     </div>
   </header>
 
   <main>
+    <div class="banner" id="unfinishedBanner" hidden>
+      <span id="unfinishedBannerText"></span>
+      <button class="mini-btn" id="unfinishedBannerOpen">Открыть</button>
+    </div>
+
     <div class="record-panel">
       <div class="record-buttons">
         <div class="record-btn-group">
@@ -414,6 +508,14 @@
       <div id="status">
         <span id="spinner" class="spinner" hidden></span>
         <span id="statusText">Нажмите, чтобы начать запись</span>
+      </div>
+      <div class="stall-box" id="stallBox" hidden>
+        <span id="stallText">Сервер не отвечает</span>
+        <button class="mini-btn" id="stallChangeBtn">Сменить модель</button>
+        <div class="model-row" id="stallModelRow" hidden>
+          <input type="text" id="stallModelInput" placeholder="Название модели" />
+          <button class="mini-btn" id="stallSendBtn">Отправить</button>
+        </div>
       </div>
     </div>
 
@@ -492,6 +594,18 @@
       <div class="modal-actions">
         <button class="btn secondary" id="clearHistoryBtn">Очистить историю</button>
         <button class="btn primary" id="closeHistory">Закрыть</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="unfinishedModal">
+    <div class="modal unfinished-modal">
+      <h2>Незавершённые записи</h2>
+      <p class="unfinished-hint">Записи, которые не удалось расшифровать. Аудио хранится, пока
+        запись не будет расшифрована или вы не удалите её сами.</p>
+      <div id="unfinishedList" class="history-list"></div>
+      <div class="modal-actions">
+        <button class="btn primary" id="closeUnfinished">Закрыть</button>
       </div>
     </div>
   </div>

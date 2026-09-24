@@ -126,7 +126,7 @@ async function checkForUpdate(currentVersion) {
   const assets = release.assets || [];
   const exeAsset = assets.find((a) => ASSET_NAME_RE.test(a.name));
   if (!exeAsset) {
-    throw new Error("В релизе не найден portable-файл (ожидалось имя вида PrikazGolosom-portable-*.exe)");
+    throw new Error("В релизе не найден portable-файл (ожидалось имя вида prikaz-golosom-portable-*.exe)");
   }
   const shaAsset = assets.find((a) => a.name === `${exeAsset.name}.sha256`);
   return {

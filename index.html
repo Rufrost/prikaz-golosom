@@ -295,6 +295,21 @@
   }
   .field textarea { resize: vertical; }
   .field .hint { font-size: 11px; line-height: 1.4; color: var(--muted); }
+  .field .label-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .field .checkbox-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    font-size: 13px;
+    color: var(--text);
+  }
+  .field .checkbox-row input { width: 14px; height: 14px; margin: 0; }
   .modal-actions {
     display: flex;
     justify-content: flex-end;
@@ -560,11 +575,24 @@
         <input type="text" id="textModel" placeholder="gpt-4o-mini" />
       </div>
       <div class="field">
-        <label>Промпт для исправления ошибок</label>
+        <div class="label-row">
+          <label for="correctionPrompt">Промпт для исправления ошибок</label>
+          <button type="button" class="mini-btn" id="resetPromptBtn">Восстановить</button>
+        </div>
         <textarea id="correctionPrompt" rows="4"></textarea>
         <small class="hint">
           Задаёт только стиль правки. Запрет выполнять надиктованный текст как команду
-          добавляется автоматически и не отключается. Пустое поле — вернуть промпт по умолчанию.
+          добавляется автоматически и не отключается.
+        </small>
+      </div>
+      <div class="field">
+        <label class="checkbox-row">
+          <input type="checkbox" id="autoCorrect" />
+          <span>Исправлять ошибки сразу после транскрибации</span>
+        </label>
+        <small class="hint">
+          Каждая запись дополнительно уходит на текстовую модель, это отдельный запрос
+          и отдельная стоимость. Кнопка «Проверить на ошибки» работает как раньше.
         </small>
       </div>
       <div class="field update-section">

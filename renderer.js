@@ -23,6 +23,8 @@ const modelInput = document.getElementById("model");
 const languageInput = document.getElementById("language");
 const textModelInput = document.getElementById("textModel");
 const correctionPromptInput = document.getElementById("correctionPrompt");
+const resetPromptBtn = document.getElementById("resetPromptBtn");
+const autoCorrectInput = document.getElementById("autoCorrect");
 
 const checkUpdateBtn = document.getElementById("checkUpdateBtn");
 const updateStatusEl = document.getElementById("updateStatus");
@@ -93,6 +95,8 @@ let isRecording = false;
 let isPaused = false;
 let recordMode = null; // "replace" | "append"
 let currentLanguage = "";
+let autoCorrectEnabled = true;
+let defaultPrompt = "";
 let sessionCostTotal = 0;
 let sessionCostHasUnknown = false;
 let timerInterval = null;
@@ -109,6 +113,8 @@ let currentSendId = null; // запись, отправку которой жд�
 async function initLanguage() {
   const config = await window.api.getConfig();
   currentLanguage = config.language || "";
+  autoCorrectEnabled = config.autoCorrect !== false;
+  defaultPrompt = await window.api.getDefaultPrompt();
 }
 initLanguage();
 
@@ -197,7 +203,13 @@ async function openSettings() {
   modelInput.value = config.model || "whisper-1";
   languageInput.value = config.language || "";
   textModelInput.value = config.textModel || "gpt-4o-mini";
-  correctionPromptInput.value = config.correctionPrompt || "";
+  // Пустое значение в конфиге означает «использовать дефолт» — показываем именно его,
+  // иначе поле выглядит пустым и кажется, что промпт потерялся.
+  if (!defaultPrompt) {
+    defaultPrompt = await window.api.getDefaultPrompt();
+  }
+  correctionPromptInput.value = config.correctionPrompt || defaultPrompt;
+  autoCorrectInput.checked = config.autoCorrect !== false;
   updateAvailableEl.hidden = true;
   updateProgressWrap.hidden = true;
   pendingUpdateAsset = null;
@@ -268,14 +280,25 @@ window.api.onUpdateProgress((fraction) => {
   updateProgressLabel.textContent = `${pct}%`;
 });
 
+resetPromptBtn.addEventListener("click", async () => {
+  if (!defaultPrompt) {
+    defaultPrompt = await window.api.getDefaultPrompt();
+  }
+  correctionPromptInput.value = defaultPrompt;
+  resetPromptBtn.textContent = "Восстановлен";
+  setTimeout(() => (resetPromptBtn.textContent = "Восстановить"), 1200);
+});
+
 saveSettings.addEventListener("click", async () => {
   currentLanguage = languageInput.value.trim();
+  autoCorrectEnabled = autoCorrectInput.checked;
   await window.api.saveConfig({
     apiKey: apiKeyInput.value.trim(),
     baseUrl: baseUrlInput.value.trim() || "https://api.polza.ai/v1",
     model: modelInput.value.trim() || "whisper-1",
     textModel: textModelInput.value.trim() || "gpt-4o-mini",
     correctionPrompt: correctionPromptInput.value.trim(),
+    autoCorrect: autoCorrectEnabled,
     language: currentLanguage,
   });
   settingsModal.classList.remove("open");
@@ -488,6 +511,35 @@ function schedulePendingSend(id) {
   }, CANCEL_WINDOW_MS);
 }
 
+// Правим только что расшифрованный фрагмент, а не всё поле: иначе уже исправленный
+// текст уходил бы на модель повторно — лишние деньги и риск, что его перепишут заново.
+// Сырой текст к этому моменту уже в поле, поэтому ошибка автоправки его не теряет.
+async function autoCorrectFragment(fragment) {
+  if (!autoCorrectEnabled || !fragment || !fragment.trim()) return;
+  checkErrorsBtn.disabled = true;
+  setStatus("Исправляю ошибки...", true);
+  try {
+    const { text, cost } = await window.api.correctText(fragment);
+    const at = resultEl.value.lastIndexOf(fragment);
+    if (at === -1) {
+      // Пользователь успел поправить текст руками — не трогаем, он главнее.
+      setStatus("Готово (текст изменён вручную, автоправка пропущена)", false);
+      return;
+    }
+    resultEl.value =
+      resultEl.value.slice(0, at) + text + resultEl.value.slice(at + fragment.length);
+    setStatus("Готово, ошибки исправлены", false);
+    updateCostStats(cost);
+  } catch (err) {
+    setStatus(
+      "Текст получен, но автоисправление не удалось: " + (err.message || err),
+      false
+    );
+  } finally {
+    checkErrorsBtn.disabled = false;
+  }
+}
+
 function insertTranscript(text, mode) {
   if (mode === "append" && resultEl.value.trim()) {
     resultEl.value = `${resultEl.value}\n${text}`;
@@ -508,6 +560,7 @@ async function sendForTranscription(id) {
       insertTranscript(outcome.text, outcome.mode);
       setStatus("Готово", false);
       updateCostStats(outcome.cost);
+      await autoCorrectFragment(outcome.text);
     } else if (outcome.cancelled) {
       setStatus("Отправка отменена: запись удалена", false);
     } else {
@@ -682,6 +735,7 @@ async function resendFromList(item, model) {
     insertTranscript(outcome.text, "append");
     updateCostStats(outcome.cost);
     setStatus("Незавершённая запись расшифрована — текст добавлен в поле и в историю", false);
+    await autoCorrectFragment(outcome.text);
   }
 }
 

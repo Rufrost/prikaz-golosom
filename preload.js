@@ -2,6 +2,7 @@ const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("api", {
   getConfig: () => ipcRenderer.invoke("get-config"),
+  getDefaultPrompt: () => ipcRenderer.invoke("get-default-prompt"),
   saveConfig: (config) => ipcRenderer.invoke("save-config", config),
   saveRecording: (buffer, durationMs, mode, language) =>
     ipcRenderer.invoke("save-recording", { buffer, durationMs, mode, language }),

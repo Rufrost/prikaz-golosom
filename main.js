@@ -78,6 +78,8 @@ const DEFAULT_CONFIG = {
   textModel: "gpt-4o-mini",
   correctionPrompt: DEFAULT_CORRECTION_PROMPT,
   language: "",
+  // Исправлять ошибки сразу после транскрибации, без нажатия кнопки.
+  autoCorrect: true,
 };
 
 function loadConfig() {
@@ -188,6 +190,9 @@ app.on("window-all-closed", () => {
 });
 
 ipcMain.handle("get-config", () => loadConfig());
+
+// Нужен кнопке «Восстановить» в настройках: дефолт живёт в main, рендерер его не знает.
+ipcMain.handle("get-default-prompt", () => DEFAULT_CORRECTION_PROMPT);
 
 ipcMain.handle("save-config", (_event, config) => {
   saveConfig(config);

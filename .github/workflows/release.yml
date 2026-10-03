@@ -17,11 +17,11 @@ jobs:
     runs-on: windows-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
       # Иначе легко выпустить тег v1.2.4 со старой версией внутри package.json:
@@ -45,7 +45,21 @@ jobs:
         env:
           # Подписи нет, иначе electron-builder полезет искать сертификат и упадёт.
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
-        run: npm run dist
+        # --publish never: иначе electron-builder на CI может сам полезть публиковать.
+        run: npm run dist -- --publish never
+
+      # Выполняется даже после падения сборки — показывает, что успело собраться.
+      - name: Что в dist
+        if: always()
+        shell: pwsh
+        run: |
+          if (Test-Path dist) {
+            Get-ChildItem dist -Recurse -File |
+              Select-Object @{N='Файл';E={$_.FullName.Replace("$PWD\","")}}, @{N='МБ';E={[math]::Round($_.Length/1MB,2)}} |
+              Format-Table -AutoSize | Out-String -Width 200 | Write-Host
+          } else {
+            Write-Host "Папки dist нет — сборка не дошла до записи файлов"
+          }
 
       - name: Хеши sha256
         run: npm run hash
@@ -67,11 +81,13 @@ jobs:
           Get-ChildItem "dist/prikaz-golosom-*-$v.exe*" | ForEach-Object { Write-Host "  $($_.Name)" }
 
       - name: Артефакты прогона
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: dist
           path: dist/prikaz-golosom-*.exe*
           retention-days: 7
+          if-no-files-found: warn
 
       - name: Публикация релиза
         if: startsWith(github.ref, 'refs/tags/')

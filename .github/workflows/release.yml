@@ -1,0 +1,89 @@
+name: release
+
+# Сборка и публикация релиза по пушу тега вида v1.2.4.
+# Ассеты собирает windows-latest, поэтому wine, gh и локальная машина не нужны.
+on:
+  push:
+    tags:
+      - "v*"
+  # Прогон вручную из вкладки Actions — собирает, но релиз не публикует.
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      # Иначе легко выпустить тег v1.2.4 со старой версией внутри package.json:
+      # апдейтер сравнивает тег с версией приложения и начнёт предлагать обновление по кругу.
+      - name: Тег совпадает с версией в package.json
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        run: |
+          $pkg = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          $tag = "${{ github.ref_name }}" -replace '^v', ''
+          if ($pkg -ne $tag) {
+            Write-Error "Тег $tag не совпадает с версией в package.json ($pkg)"
+            exit 1
+          }
+          Write-Host "Версия $pkg совпадает с тегом"
+
+      - run: npm ci
+
+      - name: Сборка
+        shell: pwsh
+        env:
+          # Подписи нет, иначе electron-builder полезет искать сертификат и упадёт.
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: npm run dist
+
+      - name: Хеши sha256
+        run: npm run hash
+
+      # updater.js ищет ассет по /^prikaz-golosom-portable-.+\.exe$/i и рядом <имя>.sha256.
+      # Без них автообновление у пользователей падает с ошибкой, поэтому проверяем до публикации.
+      - name: Ассеты для автообновления на месте
+        shell: pwsh
+        run: |
+          $v = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          $exe = "dist/prikaz-golosom-portable-$v.exe"
+          foreach ($f in @($exe, "$exe.sha256")) {
+            if (-not (Test-Path $f)) {
+              Write-Error "Не найден обязательный ассет: $f"
+              exit 1
+            }
+          }
+          Write-Host "Ассеты на месте:"
+          Get-ChildItem "dist/prikaz-golosom-*-$v.exe*" | ForEach-Object { Write-Host "  $($_.Name)" }
+
+      - name: Артефакты прогона
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/prikaz-golosom-*.exe*
+          retention-days: 7
+
+      - name: Публикация релиза
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $v = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          $tag = "${{ github.ref_name }}"
+          $assets = @(Get-ChildItem "dist/prikaz-golosom-*-$v.exe*" | ForEach-Object { $_.FullName })
+          $notes = if (Test-Path "RELEASE_NOTES.md") { @("--notes-file", "RELEASE_NOTES.md") } else { @("--generate-notes") }
+          # Массив передаётся нативной команде по элементу на аргумент; @-сплат для gh не работает.
+          $cmd = @("release", "create", $tag) + $assets + @("--title", $tag) + $notes
+          & gh $cmd
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

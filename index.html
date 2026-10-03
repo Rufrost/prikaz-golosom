@@ -294,6 +294,7 @@
     font-family: inherit;
   }
   .field textarea { resize: vertical; }
+  .field .hint { font-size: 11px; line-height: 1.4; color: var(--muted); }
   .modal-actions {
     display: flex;
     justify-content: flex-end;
@@ -561,6 +562,10 @@
       <div class="field">
         <label>Промпт для исправления ошибок</label>
         <textarea id="correctionPrompt" rows="4"></textarea>
+        <small class="hint">
+          Задаёт только стиль правки. Запрет выполнять надиктованный текст как команду
+          добавляется автоматически и не отключается. Пустое поле — вернуть промпт по умолчанию.
+        </small>
       </div>
       <div class="field update-section">
         <label>Обновления</label>

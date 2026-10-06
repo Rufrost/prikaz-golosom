@@ -1,5 +1,7 @@
 const recordBtn = document.getElementById("recordBtn");
 const appendBtn = document.getElementById("appendBtn");
+const recordCaption = document.getElementById("recordCaption");
+const rightCaption = document.getElementById("rightCaption");
 const pauseBtn = document.getElementById("pauseBtn");
 const timerEl = document.getElementById("timer");
 const cancelSendBtn = document.getElementById("cancelSendBtn");
@@ -25,6 +27,7 @@ const textModelInput = document.getElementById("textModel");
 const correctionPromptInput = document.getElementById("correctionPrompt");
 const resetPromptBtn = document.getElementById("resetPromptBtn");
 const autoCorrectInput = document.getElementById("autoCorrect");
+const mascotPicker = document.getElementById("mascotPicker");
 
 const checkUpdateBtn = document.getElementById("checkUpdateBtn");
 const updateStatusEl = document.getElementById("updateStatus");
@@ -103,6 +106,7 @@ let timerInterval = null;
 let recordingStartedAt = 0;
 let elapsedBeforePause = 0;
 let lastRecordingDurationMs = 0;
+let mascotChoice = "blob";
 
 // Незавершённые записи: состояние приходит из main-процесса целиком.
 let unfinishedState = { items: [], flights: [] };
@@ -114,9 +118,41 @@ async function initLanguage() {
   const config = await window.api.getConfig();
   currentLanguage = config.language || "";
   autoCorrectEnabled = config.autoCorrect !== false;
+  mascotChoice = config.mascot || "blob";
+  window.Mascot.setCharacter(mascotChoice);
   defaultPrompt = await window.api.getDefaultPrompt();
 }
+
+window.Mascot.mount(document.getElementById("mascot"));
+// Усталость глаз маскота считается от чистого времени записи, без пауз.
+window.Mascot.setElapsedSource(() =>
+  isRecording ? elapsedBeforePause + (isPaused ? 0 : Date.now() - recordingStartedAt) : 0
+);
 initLanguage();
+
+// Выбор маскота в настройках: только статичное превью, реакции видны уже во время записи.
+let mascotDraft = "blob";
+function renderMascotPicker() {
+  mascotPicker.innerHTML = "";
+  const options = [...window.Mascot.characters(), { key: "off", name: "Выключен" }];
+  for (const { key, name } of options) {
+    const tile = document.createElement("button");
+    tile.type = "button";
+    tile.className = "mascot-tile" + (key === mascotDraft ? " selected" : "");
+    const pic = document.createElement("span");
+    pic.className = "pic";
+    if (key === "off") pic.textContent = "—";
+    else pic.innerHTML = window.Mascot.preview(key);
+    const label = document.createElement("span");
+    label.textContent = name;
+    tile.append(pic, label);
+    tile.addEventListener("click", () => {
+      mascotDraft = key;
+      renderMascotPicker();
+    });
+    mascotPicker.appendChild(tile);
+  }
+}
 
 function setStatus(text, busy = false) {
   statusTextEl.textContent = text;
@@ -210,6 +246,8 @@ async function openSettings() {
   }
   correctionPromptInput.value = config.correctionPrompt || defaultPrompt;
   autoCorrectInput.checked = config.autoCorrect !== false;
+  mascotDraft = config.mascot || "blob";
+  renderMascotPicker();
   updateAvailableEl.hidden = true;
   updateProgressWrap.hidden = true;
   pendingUpdateAsset = null;
@@ -303,6 +341,10 @@ resetPromptBtn.addEventListener("click", async () => {
 saveSettings.addEventListener("click", async () => {
   currentLanguage = languageInput.value.trim();
   autoCorrectEnabled = autoCorrectInput.checked;
+  // Применяем всегда, даже если выбор «не изменился»: в окне должен стоять ровно тот
+  // маскот, что отмечен в настройках, — без сверки со старым значением.
+  mascotChoice = mascotDraft;
+  window.Mascot.setCharacter(mascotChoice);
   await window.api.saveConfig({
     apiKey: apiKeyInput.value.trim(),
     baseUrl: baseUrlInput.value.trim() || "https://api.polza.ai/v1",
@@ -311,6 +353,7 @@ saveSettings.addEventListener("click", async () => {
     correctionPrompt: correctionPromptInput.value.trim(),
     autoCorrect: autoCorrectEnabled,
     language: currentLanguage,
+    mascot: mascotChoice,
   });
   settingsModal.classList.remove("open");
 });
@@ -414,6 +457,7 @@ async function startRecording(mode) {
     } catch (err) {
       savingRecording = false;
       setStatus("Не удалось сохранить запись: " + (err.message || err), false);
+      window.Mascot.setMode("idle");
       recordBtn.disabled = false;
       appendBtn.disabled = false;
     }
@@ -423,15 +467,18 @@ async function startRecording(mode) {
   isRecording = true;
   isPaused = false;
 
-  const activeBtn = mode === "replace" ? recordBtn : appendBtn;
-  const otherBtn = mode === "replace" ? appendBtn : recordBtn;
-  activeBtn.classList.add("recording");
-  activeBtn.textContent = "⏹";
-  otherBtn.disabled = true;
-
+  // Во время записи слева всегда «Стоп» (и для дозаписи), а место «Дозаписать»
+  // занимает пауза. «Дозаписать» вернётся, когда запись закончится.
+  recordBtn.classList.add("recording");
+  recordBtn.textContent = "⏹";
+  recordBtn.title = "Остановить запись";
+  recordCaption.textContent = "Остановить";
+  appendBtn.hidden = true;
   pauseBtn.hidden = false;
   pauseBtn.textContent = "⏸";
+  pauseBtn.title = "Пауза";
   pauseBtn.classList.remove("paused");
+  rightCaption.textContent = "Пауза";
 
   setStatus(
     mode === "replace"
@@ -440,6 +487,8 @@ async function startRecording(mode) {
     false
   );
   startTimer();
+  window.Mascot.setStream(stream);
+  window.Mascot.setMode("listening");
 }
 
 function stopRecording() {
@@ -452,14 +501,19 @@ function stopRecording() {
   isPaused = false;
   recordBtn.classList.remove("recording");
   recordBtn.textContent = "🎙";
-  appendBtn.classList.remove("recording");
-  appendBtn.textContent = "➕";
+  recordBtn.title = "Записать (заменит текст)";
+  recordCaption.textContent = "Записать";
   recordBtn.disabled = false;
   appendBtn.disabled = false;
+  appendBtn.hidden = false;
   pauseBtn.hidden = true;
   pauseBtn.classList.remove("paused");
   pauseBtn.textContent = "⏸";
+  rightCaption.textContent = "Дозаписать";
   stopTimer();
+  window.Mascot.setStream(null);
+  // Пока идёт окно отмены и расшифровка — маскот «думает».
+  window.Mascot.setMode("processing");
 }
 
 pauseBtn.addEventListener("click", () => {
@@ -469,14 +523,20 @@ pauseBtn.addEventListener("click", () => {
     pauseTimer();
     isPaused = true;
     pauseBtn.textContent = "▶";
+    pauseBtn.title = "Продолжить запись";
+    rightCaption.textContent = "Продолжить";
     pauseBtn.classList.add("paused");
     setStatus("Запись на паузе", false);
+    window.Mascot.setMode("paused");
   } else {
     mediaRecorder.resume();
     resumeTimer();
     isPaused = false;
     pauseBtn.textContent = "⏸";
+    pauseBtn.title = "Пауза";
+    rightCaption.textContent = "Пауза";
     pauseBtn.classList.remove("paused");
+    window.Mascot.setMode("listening");
     setStatus(
       recordMode === "replace"
         ? "Идёт запись... нажмите, чтобы остановить"
@@ -511,6 +571,7 @@ function schedulePendingSend(id) {
     recordBtn.disabled = false;
     appendBtn.disabled = false;
     setStatus("Отправка отменена", false);
+    window.Mascot.setMode("idle");
   };
 
   const sendTimer = setTimeout(() => {
@@ -572,13 +633,17 @@ async function sendForTranscription(id) {
       setStatus("Готово", false);
       updateCostStats(outcome.cost);
       await autoCorrectFragment(outcome.text);
+      window.Mascot.setMode("done");
     } else if (outcome.cancelled) {
       setStatus("Отправка отменена: запись удалена", false);
+      window.Mascot.setMode("idle");
     } else {
       setStatus(`Ошибка: ${outcome.error} Запись сохранена в «Незавершённых» 📥`, false);
+      window.Mascot.setMode("idle");
     }
   } catch (err) {
     setStatus("Ошибка: " + (err.message || err), false);
+    window.Mascot.setMode("idle");
   } finally {
     clearInterval(ticker);
     currentSendId = null;
@@ -904,11 +969,8 @@ recordBtn.addEventListener("click", () => {
 });
 
 appendBtn.addEventListener("click", () => {
-  if (isRecording) {
-    stopRecording();
-  } else {
-    startRecording("append").catch((err) => {
-      setStatus("Не удалось получить доступ к микрофону: " + err.message, false);
-    });
-  }
+  if (isRecording) return;
+  startRecording("append").catch((err) => {
+    setStatus("Не удалось получить доступ к микрофону: " + err.message, false);
+  });
 });

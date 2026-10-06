@@ -80,6 +80,8 @@ const DEFAULT_CONFIG = {
   language: "",
   // Исправлять ошибки сразу после транскрибации, без нажатия кнопки.
   autoCorrect: true,
+  // Маскот в окне записи: owl | blob | eyes | cat | off.
+  mascot: "blob",
 };
 
 function loadConfig() {

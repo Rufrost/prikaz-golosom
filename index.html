@@ -22,6 +22,28 @@
     --warn-bg: #fff7ed;
     --warn-border: #ea580c;
     --warn-text: #9a3412;
+    /* Маскот (mascot.js) */
+    --owl-body: #a57c5b;
+    --owl-body-hi: #c9a283;
+    --owl-face: #e9dccd;
+    --owl-face-hi: #faf3ea;
+    --owl-lid: #f1e7db;
+    --owl-beak: #e09f3e;
+    --owl-beak-hi: #f2c06a;
+    --blob-a: #6366f1;
+    --blob-b: #8b8cf8;
+    --eye-white: #ffffff;
+    --eye-ink: #1c1f26;
+    --eyelid: #cfd2da;
+    --cat-body: #969cab;
+    --cat-body-hi: #c3c8d2;
+    --cat-lid: #adb2bf;
+    --cat-muzzle: #e4e6eb;
+    --cat-muzzle-hi: #ffffff;
+    --cat-ear: #f4b4cf;
+    --cat-ear-lo: #e892b5;
+    --cat-eye: #8cc63f;
+    --blush: #f9a8c4;
   }
   :root[data-theme="dark"] {
     color-scheme: dark;
@@ -41,6 +63,27 @@
     --warn-bg: #3a2616;
     --warn-border: #f97316;
     --warn-text: #fdba74;
+    --owl-body: #7d5f48;
+    --owl-body-hi: #a3826a;
+    --owl-face: #cdbba8;
+    --owl-face-hi: #e6d8c9;
+    --owl-lid: #d8c7b5;
+    --owl-beak: #d68f2a;
+    --owl-beak-hi: #e9b35a;
+    --blob-a: #5b5ef0;
+    --blob-b: #7f82f5;
+    --eye-white: #eef0f4;
+    --eye-ink: #15171c;
+    --eyelid: #444852;
+    --cat-body: #6c7280;
+    --cat-body-hi: #959baa;
+    --cat-lid: #7f8594;
+    --cat-muzzle: #bfc2ca;
+    --cat-muzzle-hi: #dfe1e6;
+    --cat-ear: #d98cae;
+    --cat-ear-lo: #c27295;
+    --cat-eye: #9bd450;
+    --blush: #e77fa5;
   }
   * { box-sizing: border-box; }
   body {
@@ -82,6 +125,7 @@
     gap: 16px;
   }
   .record-panel {
+    position: relative;
     background: var(--panel);
     border: 1px solid var(--border);
     border-radius: 12px;
@@ -91,21 +135,83 @@
     align-items: center;
     gap: 12px;
   }
+  /* Маскот — центр панели: кнопки записи по бокам от него, таймер под ним. */
+  .mascot-col {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+  }
+  .mascot {
+    width: 150px;
+    height: 150px;
+    pointer-events: none;
+  }
+  .mascot[hidden] { display: none; }
+  .mascot svg, .mascot-tile svg { width: 100%; height: 100%; overflow: visible; }
+  .mascot svg .head, .mascot svg .ear-l, .mascot svg .ear-r, .mascot svg .brow {
+    transform-box: fill-box;
+  }
+  .mascot svg .head, .mascot svg .ear-l, .mascot svg .ear-r { transform-origin: 50% 100%; }
+  .mascot svg .brow { transform-origin: 50% 50%; }
+  .mascot-picker {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 8px;
+  }
+  .mascot-tile {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 8px 4px 6px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--panel);
+    color: var(--text);
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .mascot-tile:hover { background: var(--hover); }
+  .mascot-tile.selected {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px var(--accent);
+  }
+  .mascot-tile .pic {
+    width: 52px;
+    height: 52px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--muted);
+    font-size: 20px;
+  }
   .record-buttons {
     display: flex;
-    gap: 28px;
-    align-items: flex-end;
+    gap: 40px;
+    align-items: flex-start;
   }
   .record-btn-group {
     display: flex;
     flex-direction: column;
     align-items: center;
     gap: 6px;
+    width: 96px;
   }
+  /* Центры кнопок — на уровне середины маскота (150 / 2 = 75 px). */
+  .record-btn-group:first-child { margin-top: 31px; }
+  .record-btn-group:last-child { margin-top: 47px; }
+  /* Маскот выключен: кнопки и таймер просто в один ряд. */
+  .record-buttons:has(.mascot[hidden]) { align-items: center; }
+  .record-buttons:has(.mascot[hidden]) .record-btn-group { margin-top: 0; }
   .btn-caption {
     font-size: 11px;
+    font-weight: 300;
+    letter-spacing: 0.02em;
     color: var(--muted);
   }
+  #appendBtn[hidden], .pause-btn[hidden] { display: none; }
   #recordBtn {
     width: 88px;
     height: 88px;
@@ -162,13 +268,13 @@
   #timer.active { color: var(--danger); }
   #timer.paused { color: var(--pause-border); }
   .pause-btn {
-    width: 40px;
-    height: 40px;
+    width: 56px;
+    height: 56px;
     border-radius: 50%;
     border: 1px solid var(--border);
     background: var(--panel);
     color: var(--text);
-    font-size: 16px;
+    font-size: 20px;
     cursor: pointer;
     transition: background 0.15s, transform 0.1s;
   }
@@ -190,7 +296,9 @@
   }
   #cancelSendBtn:hover { background: var(--cancel-hover); }
   #status {
-    font-size: 13px;
+    font-size: 12px;
+    font-weight: 300;
+    letter-spacing: 0.01em;
     color: var(--muted);
     min-height: 18px;
     display: flex;
@@ -511,15 +619,19 @@
       <div class="record-buttons">
         <div class="record-btn-group">
           <button id="recordBtn" title="Записать (заменит текст)">🎙</button>
-          <span class="btn-caption">Записать</span>
+          <span class="btn-caption" id="recordCaption">Записать</span>
+        </div>
+        <div class="mascot-col">
+          <div class="mascot" id="mascot" hidden></div>
+          <div id="timer">00:00</div>
         </div>
         <div class="record-btn-group">
           <button id="appendBtn" title="Дозаписать (добавит к тексту)">➕</button>
-          <span class="btn-caption">Дозаписать</span>
+          <!-- Во время записи на месте «Дозаписать» стоит пауза. -->
+          <button id="pauseBtn" class="pause-btn" hidden title="Пауза">⏸</button>
+          <span class="btn-caption" id="rightCaption">Дозаписать</span>
         </div>
       </div>
-      <button id="pauseBtn" class="pause-btn" hidden title="Пауза">⏸</button>
-      <div id="timer">00:00</div>
       <button id="cancelSendBtn" hidden>Отменить отправку</button>
       <div id="status">
         <span id="spinner" class="spinner" hidden></span>
@@ -595,6 +707,11 @@
           и отдельная стоимость. Кнопка «Проверить на ошибки» работает как раньше.
         </small>
       </div>
+      <div class="field">
+        <label>Маскот</label>
+        <div class="mascot-picker" id="mascotPicker"></div>
+        <small class="hint">Составляет компанию во время записи. Если отвлекает, выберите «Выключен».</small>
+      </div>
       <div class="field update-section">
         <label>Обновления</label>
         <div class="update-row">
@@ -643,6 +760,7 @@
     </div>
   </div>
 
+  <script src="mascot.js"></script>
   <script src="renderer.js"></script>
 </body>
 </html>

@@ -1,7 +1,7 @@
 {
   "name": "prikaz-golosom",
   "productName": "Prikaz golosom",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "Запись голоса и отправка в polza.ai (OpenAI-совместимый API) для транскрибации — Windows и macOS",
   "main": "main.js",
   "scripts": {
@@ -61,6 +61,7 @@
       "renderer.js",
       "updater.js",
       "recordings.js",
+      "mascot.js",
       "index.html",
       "package.json"
     ]

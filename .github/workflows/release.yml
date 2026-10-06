@@ -1,7 +1,8 @@
 name: release
 
 # Сборка и публикация релиза по пушу тега вида v1.2.4.
-# Ассеты собирает windows-latest, поэтому wine, gh и локальная машина не нужны.
+# Windows-ассеты собирает windows-latest, macOS-ассеты — macos-latest,
+# поэтому wine, gh, Mac и локальная машина не нужны.
 on:
   push:
     tags:
@@ -13,19 +14,13 @@ permissions:
   contents: write
 
 jobs:
-  build:
-    runs-on: windows-latest
-
+  # Иначе легко выпустить тег v1.2.4 со старой версией внутри package.json:
+  # апдейтер сравнивает тег с версией приложения и начнёт предлагать обновление по кругу.
+  check-version:
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v5
-        with:
-          node-version: 22
-          cache: npm
-
-      # Иначе легко выпустить тег v1.2.4 со старой версией внутри package.json:
-      # апдейтер сравнивает тег с версией приложения и начнёт предлагать обновление по кругу.
       - name: Тег совпадает с версией в package.json
         if: startsWith(github.ref, 'refs/tags/')
         shell: pwsh
@@ -37,6 +32,18 @@ jobs:
             exit 1
           }
           Write-Host "Версия $pkg совпадает с тегом"
+
+  build-windows:
+    needs: check-version
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
 
       - run: npm ci
 
@@ -84,20 +91,86 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: dist
+          name: dist-windows
           path: dist/prikaz-golosom-*.exe*
           retention-days: 7
           if-no-files-found: warn
 
+  build-macos:
+    needs: check-version
+    # Раннер на Apple Silicon; x64-сборку electron-builder собирает тут же, кросс-сборкой.
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # Сертификата Apple нет: mac.identity = null, а ad-hoc подпись ставит
+      # scripts/mac-adhoc-sign.js (afterPack), без неё arm64-сборка не запустится.
+      - name: Сборка
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: npm run dist:mac -- --publish never
+
+      - name: Что в dist
+        if: always()
+        run: ls -la dist || echo "Папки dist нет — сборка не дошла до записи файлов"
+
+      - name: Хеши sha256
+        run: npm run hash
+
+      # updater.js на macOS ищет dmg по архитектуре: prikaz-golosom-<версия>-<arm64|x64>.dmg.
+      - name: Ассеты для обновления на месте
+        run: |
+          v=$(node -p "require('./package.json').version")
+          for arch in arm64 x64; do
+            f="dist/prikaz-golosom-$v-$arch.dmg"
+            test -f "$f" || { echo "::error::Не найден обязательный ассет: $f"; exit 1; }
+          done
+          for app in dist/mac*/*.app; do
+            codesign --verify --deep --strict "$app" || { echo "::error::Не подписано: $app"; exit 1; }
+            echo "Подпись в порядке: $app"
+          done
+          ls dist/*.dmg*
+
+      - name: Артефакты прогона
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-macos
+          path: dist/prikaz-golosom-*.dmg*
+          retention-days: 7
+          if-no-files-found: warn
+
+  publish:
+    needs: [build-windows, build-macos]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
       - name: Публикация релиза
-        if: startsWith(github.ref, 'refs/tags/')
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $v = (Get-Content package.json -Raw | ConvertFrom-Json).version
           $tag = "${{ github.ref_name }}"
-          $assets = @(Get-ChildItem "dist/prikaz-golosom-*-$v.exe*" | ForEach-Object { $_.FullName })
+          $assets = @(Get-ChildItem "dist/prikaz-golosom-*$v*" | ForEach-Object { $_.FullName })
+          Write-Host "Ассеты релиза:"
+          $assets | ForEach-Object { Write-Host "  $_" }
           $notes = if (Test-Path "RELEASE_NOTES.md") { @("--notes-file", "RELEASE_NOTES.md") } else { @("--generate-notes") }
           # Массив передаётся нативной команде по элементу на аргумент; @-сплат для gh не работает.
           $cmd = @("release", "create", $tag) + $assets + @("--title", $tag) + $notes

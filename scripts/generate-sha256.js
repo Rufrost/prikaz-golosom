@@ -3,10 +3,10 @@ const path = require("node:path");
 const crypto = require("node:crypto");
 
 const distDir = path.join(__dirname, "..", "dist");
-const files = fs.readdirSync(distDir).filter((f) => f.endsWith(".exe"));
+const files = fs.readdirSync(distDir).filter((f) => f.endsWith(".exe") || f.endsWith(".dmg"));
 
 if (files.length === 0) {
-  console.log("В dist/ нет .exe файлов — сначала запустите npm run dist.");
+  console.log("В dist/ нет .exe/.dmg файлов — сначала запустите npm run dist или npm run dist:mac.");
   process.exit(0);
 }
 

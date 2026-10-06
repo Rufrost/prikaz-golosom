@@ -233,7 +233,9 @@ checkUpdateBtn.addEventListener("click", async () => {
       updateStatusEl.textContent = `Текущая версия: ${appVersion}`;
       pendingUpdateAsset = result.asset;
       const latest = String(result.latestVersion).replace(/^v/i, "");
-      updateAvailableTextEl.textContent = `Доступна версия ${latest}. Файл будет скачан, проверен и приложение перезапустится с обновлением.`;
+      updateAvailableTextEl.textContent = result.asset.manual
+        ? `Доступна версия ${latest}. Загрузка .dmg откроется в браузере — перетащите новую версию в «Программы» с заменой.`
+        : `Доступна версия ${latest}. Файл будет скачан, проверен и приложение перезапустится с обновлением.`;
       updateAvailableEl.hidden = false;
     } else {
       updateStatusEl.textContent = `У вас последняя версия (${appVersion}).`;
@@ -254,6 +256,15 @@ installUpdateBtn.addEventListener("click", async () => {
   if (!pendingUpdateAsset) return;
   installUpdateBtn.disabled = true;
   dismissUpdateBtn.disabled = true;
+  if (pendingUpdateAsset.manual) {
+    const result = await window.api.installUpdate(pendingUpdateAsset);
+    updateAvailableTextEl.textContent = result.ok
+      ? "Загрузка открыта в браузере. Закройте приложение, откройте .dmg и перетащите Prikaz golosom в «Программы» с заменой."
+      : `Не удалось открыть загрузку: ${result.error}`;
+    installUpdateBtn.disabled = false;
+    dismissUpdateBtn.disabled = false;
+    return;
+  }
   updateProgressWrap.hidden = false;
   updateProgressFill.style.width = "0%";
   updateProgressLabel.textContent = "0%";

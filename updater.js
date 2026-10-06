@@ -8,6 +8,8 @@ const { spawn } = require("node:child_process");
 const GITHUB_OWNER = "Rufrost";
 const GITHUB_REPO = "prikaz-golosom";
 const ASSET_NAME_RE = /^prikaz-golosom-portable-.+\.exe$/i;
+// На macOS сборок две — под Apple Silicon (arm64) и Intel (x64), см. dmg.artifactName.
+const macAssetRe = (arch) => new RegExp(`^prikaz-golosom-.+-${arch}\\.dmg$`, "i");
 const USER_AGENT = "prikaz-golosom-updater";
 const MAX_REDIRECTS = 5;
 
@@ -114,7 +116,7 @@ function isNewer(latestVersion, currentVersion) {
   return false;
 }
 
-async function checkForUpdate(currentVersion) {
+async function checkForUpdate(currentVersion, platform = process.platform, arch = process.arch) {
   const release = await httpGetJson(`https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases/latest`);
   if (release.draft || release.prerelease) {
     return { hasUpdate: false };
@@ -124,6 +126,25 @@ async function checkForUpdate(currentVersion) {
     return { hasUpdate: false, latestVersion };
   }
   const assets = release.assets || [];
+
+  // Без подписи Apple подменить .app на месте нельзя: Gatekeeper помечает скачанное
+  // карантином. Поэтому на macOS только отдаём ссылку — dmg скачивается в браузере,
+  // а приложение пользователь перетаскивает в «Программы» сам.
+  if (platform === "darwin") {
+    const dmgAsset = assets.find((a) => macAssetRe(arch).test(a.name));
+    return {
+      hasUpdate: true,
+      latestVersion,
+      releaseUrl: release.html_url,
+      releaseNotes: release.body || "",
+      asset: {
+        manual: true,
+        name: dmgAsset ? dmgAsset.name : null,
+        downloadUrl: dmgAsset ? dmgAsset.browser_download_url : release.html_url,
+      },
+    };
+  }
+
   const exeAsset = assets.find((a) => ASSET_NAME_RE.test(a.name));
   if (!exeAsset) {
     throw new Error("В релизе не найден portable-файл (ожидалось имя вида prikaz-golosom-portable-*.exe)");

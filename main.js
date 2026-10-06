@@ -1,11 +1,11 @@
-const { app, BrowserWindow, ipcMain, session, clipboard } = require("electron");
+const { app, BrowserWindow, ipcMain, session, clipboard, shell, systemPreferences } = require("electron");
 const fs = require("node:fs");
 const path = require("node:path");
 const OpenAI = require("openai");
 const updater = require("./updater");
 const { UnfinishedQueue, TranscriptSender } = require("./recordings");
 
-// Папку данных фиксируем явно. По умолчанию Electron берёт её имя из названия
+// Папку данных фиксируем явно (на macOS это ~/Library/Application Support/prikaz-golosom). По умолчанию Electron берёт её имя из названия
 // приложения, и после переименования «Приказ голосом» -> «Prikaz golosom» она
 // сменилась бы — пользователь молча потерял бы API-ключ, историю, тему и очередь
 // незавершённых записей. Все версии до переименования жили в %APPDATA%\prikaz-golosom.
@@ -171,8 +171,14 @@ function createWindow() {
   win.loadFile("index.html");
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   unfinishedQueue.recover();
+
+  // На macOS доступ к микрофону выдаёт система (TCC), а не только Chromium: без явного
+  // запроса getUserMedia может молча вернуть тишину. Спрашиваем один раз, при первом запуске.
+  if (process.platform === "darwin" && systemPreferences.getMediaAccessStatus("microphone") === "not-determined") {
+    await systemPreferences.askForMediaAccess("microphone");
+  }
 
   session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
     callback(permission === "media");
@@ -222,6 +228,16 @@ ipcMain.handle("check-for-updates", async () => {
 });
 
 ipcMain.handle("install-update", async (event, asset) => {
+  // macOS: см. updater.checkForUpdate — открываем загрузку dmg в браузере.
+  if (process.platform === "darwin") {
+    const url = String(asset?.downloadUrl || "");
+    if (!url.startsWith("https://github.com/")) {
+      return { ok: false, error: "Некорректная ссылка на обновление." };
+    }
+    await shell.openExternal(url);
+    return { ok: true, manual: true };
+  }
+
   // Portable-сборка электрон-билдера при запуске распаковывает себя во временную
   // папку — process.execPath там указывает на временную копию, а не на файл,
   // который реально запустил пользователь. Настоящий путь NSIS-обёртка кладёт
